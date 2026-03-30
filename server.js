@@ -22,7 +22,13 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-app.use(cors());
+// Permissive CORS configuration
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
 
@@ -36,11 +42,7 @@ const jobs = new Map();
 const jobQueue = [];
 
 // ==================== FILE UPLOAD ====================
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
-    filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
-});
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.post('/upload', upload.array('files'), async (req, res) => {
     if (!req.files || req.files.length === 0) {
@@ -50,20 +52,19 @@ app.post('/upload', upload.array('files'), async (req, res) => {
     try {
         const uploadPromises = req.files.map(file => {
             return new Promise((resolve, reject) => {
-                cloudinary.uploader.upload(file.path, {
+                const stream = cloudinary.uploader.upload_stream({
                     resource_type: 'auto',
                     folder: 'distributed_compute'
                 }, (error, result) => {
-                    // Cleanup local file
-                    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
                     if (error) reject(error);
                     else resolve(result.secure_url);
                 });
+                stream.end(file.buffer);
             });
         });
 
         const urls = await Promise.all(uploadPromises);
-        console.log(`✅ Uploaded ${urls.length} files to Cloudinary`);
+        console.log(`✅ Uploaded ${urls.length} files to Cloudinary (Memory Mode)`);
         res.json({ files: urls });
     } catch (error) {
         console.error('❌ Cloudinary Upload Error:', error);

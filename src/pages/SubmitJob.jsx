@@ -100,14 +100,14 @@ const SubmitJob = () => {
             files.forEach(f => fd.append('files', f));
 
             // Use the dynamic currentUrl from context
-            const uploadRes = await axios.post(`${currentUrl}/upload`, fd);
+            const uploadRes = await axios.post(`${currentUrl}/upload`, fd, { timeout: 60000 });
 
             // Send new task object structure to the global queue
             await axios.post(`${currentUrl}/submit-job`, {
                 description: description.trim(),
                 files: uploadRes.data.files,
                 resources_required: { ...resources }
-            });
+            }, { timeout: 60000 });
 
             setFiles([]);
             setDescription('');
