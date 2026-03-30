@@ -49,15 +49,6 @@ npm install
 npm start
 ```
 
-## 🚀 Deployment & Hosting
-
-**[→ Read the full Deployment Guide](DEPLOYMENT_GUIDE.md)** for:
-- ✅ Fixing auto-connection when deployed
-- ✅ Separating workers from UI-only users
-- ✅ Ensuring tasks distribute to all available workers
-- ✅ Troubleshooting common issues
-- ✅ Server configuration & monitoring
-
 ### Run Headless (Server + Worker separately)
 ```bash
 # Terminal 1: Start server

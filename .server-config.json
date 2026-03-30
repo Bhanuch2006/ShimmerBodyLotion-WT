@@ -1,11 +1,9 @@
 {
-
-      "serverUrl": "https://shimmerbodylotion-wt.onrender.com", 
-        "workerUrl": null,
+  "serverUrl": "http://localhost:3000",
+  "workerUrl": "http://localhost:4000",
   "description": "Server configuration for SharingIsCaring",
   "instructions": {
     "serverUrl": "Your deployed server URL (e.g., https://your-app.onrender.com)",
     "workerUrl": "Optional: explicit worker IP (e.g., http://172.29.224.1:4000). Leave null for auto-detection"
   }
 }
-

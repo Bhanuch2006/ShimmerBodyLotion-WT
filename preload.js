@@ -2,10 +2,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
     getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
-    getSavedConfig: () => ipcRenderer.invoke('get-saved-config'),
-    connectToServer: (url) => ipcRenderer.invoke('connect-to-server', url),
-    resetConfig: () => ipcRenderer.invoke('reset-config'),
+    toggleWorker: (start, serverUrl) => ipcRenderer.invoke('toggle-worker', start, serverUrl),
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),
-    close: () => ipcRenderer.send('window-close')
+    close: () => ipcRenderer.send('window-close'),
+    onWorkerStatus: (callback) => ipcRenderer.on('worker-status', (_, data) => callback(data)),
+    onWorkerMessage: (callback) => ipcRenderer.on('worker-message', (_, msg) => callback(msg)),
+    sendWorkerReply: (msgType, data) => ipcRenderer.invoke('worker-reply', msgType, data)
 });

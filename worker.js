@@ -155,12 +155,20 @@ function isDockerRunning() {
 // ==================== JOB EXECUTION ====================
 app.get('/', (req, res) => res.json({ status: 'worker running', port: PORT, publicUrl: workerUrl, capabilities }));
 
+<<<<<<< HEAD
 // Keep /execute endpoint as fallback for direct dispatch
 app.post('/execute', async (req, res) => {
     const { jobId, files, serverUrl } = req.body;
     res.json({ status: 'accepted', jobId });
     executeJob(jobId, files, serverUrl);
 });
+=======
+let activeJobOffer = null;
+
+app.post('/offer', async (req, res) => {
+    const { jobId, files, description, resources, serverUrl } = req.body;
+    res.json({ status: 'offered', jobId });
+>>>>>>> MehulShaunak
 
 async function executeJob(jobId, files, serverUrl) {
     if (isExecuting) {
@@ -170,11 +178,52 @@ async function executeJob(jobId, files, serverUrl) {
 
     isExecuting = true;
     const SERVER = serverUrl || SERVER_URL;
+    activeJobOffer = { jobId, files, serverUrl: SERVER, description, resources };
 
+<<<<<<< HEAD
     console.log(`📋 Executing job: ${jobId}`);
     console.log(`   Server URL: ${SERVER}`);
     console.log(`   Files to download: ${files.length}`);
+=======
+    console.log('📬 Received job offer:', jobId);
+>>>>>>> MehulShaunak
 
+    if (process.send) {
+        process.send({ 
+            type: 'JOB_OFFER', 
+            data: activeJobOffer
+        });
+    } else {
+        console.log('⚠️ No IPC parent found, auto-accepting job (headless mode)');
+        executeJob(jobId, files, SERVER);
+    }
+});
+
+// Listen for IPC messages from Electron Main Process
+process.on('message', async (msg) => {
+    if (msg.type === 'JOB_ACCEPTED' && activeJobOffer?.jobId === msg.jobId) {
+        console.log('✅ Job accepted by local contributor:', msg.jobId);
+        const { jobId, files, serverUrl } = activeJobOffer;
+        activeJobOffer = null;
+        executeJob(jobId, files, serverUrl);
+    } 
+    else if (msg.type === 'JOB_REJECTED' && activeJobOffer?.jobId === msg.jobId) {
+        console.log('❌ Job rejected by local contributor:', msg.jobId);
+        const SERVER = activeJobOffer.serverUrl;
+        activeJobOffer = null;
+        try {
+            await axios.post(`${SERVER}/job-update`, {
+                jobId: msg.jobId,
+                status: 'rejected',
+                workerUrl
+            });
+        } catch (e) {
+            console.error('Failed to send rejection to server');
+        }
+    }
+});
+
+async function executeJob(jobId, files, SERVER) {
     try {
         await axios.post(`${SERVER}/job-update`, { jobId, status: 'running', workerUrl });
 
@@ -196,6 +245,7 @@ async function executeJob(jobId, files, serverUrl) {
             }
 
             const localPath = path.join(jobsPath, fileName);
+<<<<<<< HEAD
             const downloadUrl = `${SERVER}/${cleanPath}`;
             console.log(`⬇️ Downloading: ${downloadUrl}`);
 
@@ -207,6 +257,10 @@ async function executeJob(jobId, files, serverUrl) {
                 throw downloadErr;
             }
 
+=======
+            console.log('⬇️ Downloading:', cleanPath, '->', fileName);
+            await downloadFile(`${SERVER}/${cleanPath}`, localPath);
+>>>>>>> MehulShaunak
             downloadedFiles.push(fileName);
         }
 
