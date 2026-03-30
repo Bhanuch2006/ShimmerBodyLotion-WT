@@ -114,7 +114,8 @@ const SubmitJob = () => {
             navigate('/');
         } catch (error) {
             console.error(error);
-            alert("Error submitting job. Make sure the backend server handles /upload and /submit-job.");
+            const errMsg = error.response?.data?.error || error.message;
+            alert(`Error submitting job: ${errMsg}\n\nMake sure the backend server handles /upload and /submit-job.`);
         } finally {
             setSubmitting(false);
         }

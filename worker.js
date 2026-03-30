@@ -242,10 +242,15 @@ async function startJobExecution(jobId, files, SERVER) {
             }
 
             const localPath = path.join(jobsPath, fileName);
-            console.log(`⬇️ Downloading: ${cleanPath} -> ${fileName}`);
+            
+            // If it's a Cloudinary URL (starts with http), use it directly.
+            // Otherwise, prepend the server URL for legacy compatibility.
+            const downloadUrl = cleanPath.startsWith('http') ? cleanPath : `${SERVER}/${cleanPath}`;
+            
+            console.log(`⬇️ Downloading: ${fileName} from ${downloadUrl.substring(0, 30)}...`);
             
             try {
-                await downloadFile(`${SERVER}/${cleanPath}`, localPath);
+                await downloadFile(downloadUrl, localPath);
                 downloadedFiles.push(fileName);
             } catch (downloadErr) {
                 console.error(`   ❌ Download failed: ${downloadErr.message}`);

@@ -9,6 +9,14 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const cors = require('cors');
+const cloudinary = require('cloudinary').v2;
+
+// Configure Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -18,6 +26,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
 
+// Temporary uploads folder for Cloudinary piping
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
@@ -33,12 +42,33 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-app.post('/upload', upload.array('files'), (req, res) => {
+app.post('/upload', upload.array('files'), async (req, res) => {
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No files uploaded' });
     }
-    const files = req.files.map(f => f.path.replace(/\\/g, '/'));
-    res.json({ files });
+
+    try {
+        const uploadPromises = req.files.map(file => {
+            return new Promise((resolve, reject) => {
+                cloudinary.uploader.upload(file.path, {
+                    resource_type: 'auto',
+                    folder: 'distributed_compute'
+                }, (error, result) => {
+                    // Cleanup local file
+                    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+                    if (error) reject(error);
+                    else resolve(result.secure_url);
+                });
+            });
+        });
+
+        const urls = await Promise.all(uploadPromises);
+        console.log(`✅ Uploaded ${urls.length} files to Cloudinary`);
+        res.json({ files: urls });
+    } catch (error) {
+        console.error('❌ Cloudinary Upload Error:', error);
+        res.status(500).json({ error: 'Cloudinary upload failed' });
+    }
 });
 
 // ==================== WORKER REGISTRATION ====================

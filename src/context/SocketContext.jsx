@@ -8,25 +8,15 @@ export const useSocket = () => {
 };
 
 export const SocketProvider = ({ children }) => {
+    const DEFAULT_URL = "https://shimmerbodylotion-wt.onrender.com";
+
     const [socket, setSocket] = useState(null);
     const [connected, setConnected] = useState(false);
-    const [currentUrl, setCurrentUrl] = useState('https://shimmerbodylotion-wt.onrender.com');
-    
-    // Global state arrays updated directly by socket events
+    const [currentUrl, setCurrentUrl] = useState(DEFAULT_URL);
+
+    // Global state
     const [workers, setWorkers] = useState([]);
     const [jobs, setJobs] = useState([]);
-
-    useEffect(() => {
-        // Fetch central server URL from configuration on mount (Electron only)
-        if (window.electronAPI?.getServerUrl) {
-            window.electronAPI.getServerUrl().then(url => {
-                if (url) {
-                    console.log(`[Socket] Connecting to central server: ${url}`);
-                    setCurrentUrl(url);
-                }
-            });
-        }
-    }, []);
     const [stats, setStats] = useState({
         totalJobs: 0,
         completedJobs: 0,
@@ -40,28 +30,93 @@ export const SocketProvider = ({ children }) => {
         successRate: 0
     });
 
+    // 🔥 SAFE Electron override (won't break if invalid)
     useEffect(() => {
-        const newSocket = io(currentUrl);
+        const initUrl = async () => {
+            try {
+                if (window.electronAPI?.getServerUrl) {
+                    const url = await window.electronAPI.getServerUrl();
+
+                    if (url && url.startsWith("http")) {
+                        console.log("[Socket] Using Electron-provided URL:", url);
+                        setCurrentUrl(url);
+                    } else {
+                        console.log("[Socket] Invalid Electron URL, using default:", DEFAULT_URL);
+                        setCurrentUrl(DEFAULT_URL);
+                    }
+                } else {
+                    console.log("[Socket] No Electron API, using default:", DEFAULT_URL);
+                }
+            } catch (err) {
+                console.log("[Socket] Error fetching Electron URL, fallback to default:", DEFAULT_URL);
+                setCurrentUrl(DEFAULT_URL);
+            }
+        };
+
+        initUrl();
+    }, []);
+
+    // 🔌 Socket connection
+    useEffect(() => {
+        if (!currentUrl) return;
+
+        console.log("[Socket] Connecting to:", currentUrl);
+
+        const newSocket = io(currentUrl, {
+            transports: ["websocket"], // more stable
+            reconnection: true
+        });
+
         setSocket(newSocket);
 
-        newSocket.on('connect', () => setConnected(true));
-        newSocket.on('disconnect', () => setConnected(false));
-        
+        newSocket.on('connect', () => {
+            console.log("[Socket] Connected");
+            setConnected(true);
+        });
+
+        newSocket.on('disconnect', () => {
+            console.log("[Socket] Disconnected");
+            setConnected(false);
+        });
+
         newSocket.on('update', (data) => {
             if (data.workers) setWorkers(data.workers);
             if (data.jobs) setJobs(data.jobs);
             if (data.stats) setStats(data.stats);
         });
 
-        return () => newSocket.disconnect();
+        return () => {
+            console.log("[Socket] Cleaning up socket");
+            newSocket.disconnect();
+        };
+    }, [currentUrl]);
+
+    // 🔍 Debug current URL
+    useEffect(() => {
+        console.log("🌐 FINAL currentUrl:", currentUrl);
     }, [currentUrl]);
 
     const connectToNetwork = (url) => {
-        setCurrentUrl(url);
+        if (url && url.startsWith("http")) {
+            console.log("[Socket] Manually switching to:", url);
+            setCurrentUrl(url);
+        } else {
+            console.warn("[Socket] Invalid URL ignored:", url);
+        }
     };
 
     return (
-        <SocketContext.Provider value={{ socket, connected, currentUrl, workers, jobs, stats, connectToNetwork }}>
+        <SocketContext.Provider
+            value={{
+                socket,
+                connected,
+                currentUrl,
+                workers,
+                jobs,
+                stats,
+                connectToNetwork
+            }}
+        >
             {children}
         </SocketContext.Provider>
     );
