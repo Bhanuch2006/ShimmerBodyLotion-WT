@@ -13,6 +13,23 @@ const userDataPath = path.join(__dirname, '.electron_data');
 app.setPath('userData', userDataPath);
 app.setPath('sessionData', path.join(userDataPath, 'session'));
 
+const fs = require('fs');
+let CENTRAL_SERVER = 'https://shimmerbodylotion-wt.onrender.com'; // Default fallback
+
+// Read central server URL from config if exists
+try {
+    const configPath = path.join(__dirname, '.server-config.json');
+    if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (config.serverUrl) {
+            CENTRAL_SERVER = config.serverUrl;
+            console.log(`[Main] Using central server from config: ${CENTRAL_SERVER}`);
+        }
+    }
+} catch (err) {
+    console.error('[Main] Failed to read .server-config.json:', err.message);
+}
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1400,
@@ -99,11 +116,14 @@ ipcMain.handle('get-system-info', () => ({
     hostname: os.hostname()
 }));
 
+ipcMain.handle('get-server-url', () => CENTRAL_SERVER);
+
 ipcMain.handle('toggle-worker', (event, start, serverUrl) => {
     if (start && !workerProcess) {
+        const targetUrl = serverUrl || CENTRAL_SERVER;
         workerProcess = fork(path.join(__dirname, 'worker.js'), [], { 
             silent: true,
-            env: { ...process.env, SERVER_URL: serverUrl || 'http://localhost:3000' }
+            env: { ...process.env, SERVER_URL: targetUrl }
         });
         workerProcess.stdout.on('data', d => process.stdout.write(`[Worker] ${d}`));
         workerProcess.stderr.on('data', d => process.stderr.write(`[Worker ERR] ${d}`));

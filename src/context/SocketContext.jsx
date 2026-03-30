@@ -10,11 +10,23 @@ export const useSocket = () => {
 export const SocketProvider = ({ children }) => {
     const [socket, setSocket] = useState(null);
     const [connected, setConnected] = useState(false);
-    const [currentUrl, setCurrentUrl] = useState('http://localhost:3000');
+    const [currentUrl, setCurrentUrl] = useState('https://shimmerbodylotion-wt.onrender.com');
     
     // Global state arrays updated directly by socket events
     const [workers, setWorkers] = useState([]);
     const [jobs, setJobs] = useState([]);
+
+    useEffect(() => {
+        // Fetch central server URL from configuration on mount (Electron only)
+        if (window.electronAPI?.getServerUrl) {
+            window.electronAPI.getServerUrl().then(url => {
+                if (url) {
+                    console.log(`[Socket] Connecting to central server: ${url}`);
+                    setCurrentUrl(url);
+                }
+            });
+        }
+    }, []);
     const [stats, setStats] = useState({
         totalJobs: 0,
         completedJobs: 0,

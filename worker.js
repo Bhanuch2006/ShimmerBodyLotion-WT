@@ -10,7 +10,7 @@ const app = express();
 app.use(express.json());
 
 const PORT = parseInt(process.env.WORKER_PORT) || 4000;
-const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
+const SERVER_URL = process.env.SERVER_URL || 'https://shimmerbodylotion-wt.onrender.com';
 const NGROK_AUTHTOKEN = process.env.NGROK_AUTHTOKEN || null;
 
 // workerUrl will be set after ngrok tunnel starts (or fallback to localhost)
