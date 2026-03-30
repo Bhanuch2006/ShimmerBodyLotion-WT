@@ -4,20 +4,20 @@ import { useSocket } from '../context/SocketContext';
 import { useTheme } from '../hooks/useTheme';
 
 const ConnectDevice = () => {
-    const { connectToNetwork } = useSocket();
+    const { connectToNetwork, currentUrl } = useSocket();
     const theme = useTheme();
     const [joinIp, setJoinIp] = useState('');
     const [networkInfo, setNetworkInfo] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        axios.get('http://localhost:3000/api/network-info')
+        axios.get(`${currentUrl}/api/network-info`)
             .then(res => {
                 setNetworkInfo(res.data);
                 setLoading(false);
             })
             .catch(() => setLoading(false));
-    }, []);
+    }, [currentUrl]);
 
     const handleJoin = () => {
         if (!joinIp) return;

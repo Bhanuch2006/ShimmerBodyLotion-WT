@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../hooks/useTheme';
+import { useSocket } from '../context/SocketContext';
 
 const SubmitJob = () => {
     const theme = useTheme();
+    const { currentUrl } = useSocket();
     const [files, setFiles] = useState([]);
     const [description, setDescription] = useState('');
     const [resources, setResources] = useState({ cpu: 1, ram: 0.5, gpu: false });
@@ -92,27 +94,50 @@ const SubmitJob = () => {
 
     const submitJob = async () => {
         if (!files.length || !description.trim()) return;
+        
+        if (!currentUrl) {
+            alert('Server URL not configured. Please check your connection.');
+            return;
+        }
+
         setSubmitting(true);
         try {
             const fd = new FormData();
             files.forEach(f => fd.append('files', f));
 
-            // Assume express server proxies /upload
-            const uploadRes = await axios.post('http://localhost:3000/upload', fd);
+            console.log(`[SubmitJob] Submitting to server: ${currentUrl}`);
+            console.log(`[SubmitJob] Files: ${files.map(f => f.name).join(', ')}`);
 
-            // Send new task object structure to the global queue
-            await axios.post('http://localhost:3000/submit-job', {
+            // Upload files to the server
+            console.log(`[SubmitJob] Step 1: Uploading ${files.length} files to ${currentUrl}/upload`);
+            const uploadRes = await axios.post(`${currentUrl}/upload`, fd, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            console.log('[SubmitJob] Files uploaded successfully:', uploadRes.data.files);
+
+            // Submit the job
+            console.log(`[SubmitJob] Step 2: Submitting job to ${currentUrl}/submit-job`);
+            await axios.post(`${currentUrl}/submit-job`, {
                 description: description.trim(),
                 files: uploadRes.data.files,
                 resources_required: { ...resources }
             });
 
+            console.log('[SubmitJob] Job submitted successfully!');
             setFiles([]);
             setDescription('');
             navigate('/');
         } catch (error) {
-            console.error(error);
-            alert("Error submitting job. Make sure the backend server handles /upload and /submit-job.");
+            const errorMsg = error.response?.data?.error || error.message;
+            const statusCode = error.response?.status;
+            console.error('[SubmitJob] Error:', {
+                message: errorMsg,
+                status: statusCode,
+                url: currentUrl,
+                error: error
+            });
+            
+            alert(`Error submitting job (${statusCode || 'network error'})\n\nServer: ${currentUrl}\nError: ${errorMsg}`);
         } finally {
             setSubmitting(false);
         }

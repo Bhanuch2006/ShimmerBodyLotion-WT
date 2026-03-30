@@ -4,7 +4,7 @@ import { useSocket } from '../context/SocketContext';
 import { useTheme } from '../hooks/useTheme';
 
 const Sidebar = () => {
-    const { connected } = useSocket();
+    const { connected, currentUrl } = useSocket();
     const theme = useTheme();
     const [workerOn, setWorkerOn] = useState(false);
     const [sysInfo, setSysInfo] = useState({ cpu: '—', cores: '—', mem: '—', plat: '—' });
@@ -33,7 +33,7 @@ const Sidebar = () => {
     const toggleWorker = async (e) => {
         const checked = e.target.checked;
         if (window.electronAPI) {
-            await window.electronAPI.toggleWorker(checked, 'http://localhost:3000');
+            await window.electronAPI.toggleWorker(checked, currentUrl);
             setWorkerOn(checked);
         }
     };
