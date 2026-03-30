@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SharingIsCaring — Offline</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #060612; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
+        .tbar { height: 38px; background: #0c0c24; border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; -webkit-app-region: drag; }
+        .tbar-brand { display: flex; align-items: center; gap: 8px; }
+        .tbar-brand .ico { width: 20px; height: 20px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+        .tbar-brand span { font-size: 12px; font-weight: 600; color: #94a3b8; }
+        .tbar-btns { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+        .tb { width: 36px; height: 28px; border: none; background: transparent; color: #94a3b8; font-size: 12px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+        .tb:hover { background: rgba(129,140,248,0.15); }
+        .tb.x:hover { background: #e81123; color: white; }
+        .content { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; }
+        .emoji { font-size: 64px; margin-bottom: 20px; }
+        h1 { font-size: 28px; font-weight: 800; margin-bottom: 12px; background: linear-gradient(135deg, #667eea, #764ba2); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        p { color: #94a3b8; font-size: 14px; line-height: 1.8; margin-bottom: 24px; }
+        .retry-btn { padding: 14px 32px; border: none; border-radius: 12px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-family: 'Inter'; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.3s; }
+        .retry-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(129,140,248,0.3); }
+        .spinner { display: none; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; margin: 0 auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+<div class="tbar">
+    <div class="tbar-brand"><div class="ico">⚡</div><span>SharingIsCaring</span></div>
+    <div class="tbar-btns">
+        <button class="tb" onclick="wctl('minimize')">─</button>
+        <button class="tb" onclick="wctl('maximize')">□</button>
+        <button class="tb x" onclick="wctl('close')">✕</button>
+    </div>
+</div>
+<div class="content">
+    <div>
+        <div class="emoji">🔌</div>
+        <h1>Cannot Reach Server</h1>
+        <p>The central server is not reachable right now.<br>Check your internet connection and try again.</p>
+        <button class="retry-btn" onclick="retry()">🔄 Retry Connection</button>
+        <div class="spinner" id="spinner"></div>
+    </div>
+</div>
+<script>
+function retry() {
+    document.querySelector('.retry-btn').style.display = 'none';
+    document.getElementById('spinner').style.display = 'block';
+    setTimeout(() => location.reload(), 500);
+}
+function wctl(a) { if (window.electronAPI) window.electronAPI[a](); else if (a==='close') window.close(); }
+// Auto-retry every 15 seconds
+setTimeout(() => location.reload(), 15000);
+</script>
+</body>
+</html>

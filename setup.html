@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SharingIsCaring — Connect</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg-0: #060612; --bg-1: #0c0c24; --bg-2: #13132e;
+            --bg-card: rgba(255,255,255,0.035); --bg-card-h: rgba(255,255,255,0.06);
+            --border: rgba(255,255,255,0.07); --border-h: rgba(255,255,255,0.14);
+            --text: #e2e8f0; --text-m: #94a3b8; --text-d: #475569;
+            --accent: #818cf8; --accent-rgb: 129,140,248;
+            --grad: linear-gradient(135deg, #667eea, #764ba2);
+            --ok: #34d399; --err: #f87171;
+            --shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-0);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Background animation */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(ellipse at 30% 20%, rgba(102,126,234,0.08) 0%, transparent 50%),
+                        radial-gradient(ellipse at 70% 80%, rgba(118,75,162,0.06) 0%, transparent 50%),
+                        radial-gradient(ellipse at 50% 50%, rgba(129,140,248,0.03) 0%, transparent 70%);
+            animation: bgFloat 20s ease-in-out infinite;
+            z-index: 0;
+        }
+        @keyframes bgFloat {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(2%, -1%) rotate(1deg); }
+            66% { transform: translate(-1%, 2%) rotate(-1deg); }
+        }
+
+        /* Title Bar */
+        .tbar {
+            height: 38px; background: var(--bg-1); border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 12px; -webkit-app-region: drag;
+            position: relative; z-index: 10;
+        }
+        .tbar-brand { display: flex; align-items: center; gap: 8px; }
+        .tbar-brand .ico { width: 20px; height: 20px; background: var(--grad); border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+        .tbar-brand span { font-size: 12px; font-weight: 600; color: var(--text-m); letter-spacing: 0.5px; }
+        .tbar-btns { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+        .tb { width: 36px; height: 28px; border: none; background: transparent; color: var(--text-m); font-size: 12px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+        .tb:hover { background: rgba(var(--accent-rgb),0.15); color: var(--text); }
+        .tb.x:hover { background: #e81123; color: white; }
+
+        .setup-container {
+            flex: 1; display: flex; align-items: center; justify-content: center;
+            position: relative; z-index: 1;
+        }
+        .setup-inner {
+            text-align: center; max-width: 520px; width: 100%; padding: 0 32px;
+        }
+
+        .logo-icon {
+            width: 80px; height: 80px; background: var(--grad); border-radius: 20px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 24px; box-shadow: 0 8px 32px rgba(var(--accent-rgb),0.3);
+            font-size: 40px;
+            animation: logoPulse 3s ease-in-out infinite;
+        }
+        @keyframes logoPulse {
+            0%,100% { box-shadow: 0 8px 32px rgba(var(--accent-rgb),0.3); }
+            50% { box-shadow: 0 8px 48px rgba(var(--accent-rgb),0.5); }
+        }
+        .setup-title {
+            font-size: 36px; font-weight: 800; margin-bottom: 8px;
+            background: var(--grad); background-clip: text; -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .setup-subtitle { font-size: 14px; color: var(--text-m); margin-bottom: 12px; line-height: 1.6; }
+
+        .setup-note {
+            font-size: 12px; color: var(--text-d); margin-bottom: 36px;
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+        }
+        .setup-note .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        /* Server URL input */
+        .input-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+            padding: 28px 24px; text-align: left; margin-bottom: 20px;
+        }
+        .input-label {
+            font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+            color: var(--text-d); font-weight: 600; margin-bottom: 12px;
+        }
+        .url-input-wrap {
+            display: flex; gap: 0;
+            background: var(--bg-0); border: 2px solid var(--border);
+            border-radius: 12px; overflow: hidden;
+            transition: border-color 0.3s;
+        }
+        .url-input-wrap:focus-within { border-color: var(--accent); }
+        .url-input {
+            flex: 1; background: none; border: none; color: var(--text);
+            font-family: 'Consolas', monospace; font-size: 14px; font-weight: 500;
+            padding: 14px 16px; outline: none;
+        }
+        .url-input::placeholder { color: var(--text-d); font-weight: 400; }
+
+        .status-msg {
+            font-size: 12px; margin-top: 12px; min-height: 20px;
+            transition: all 0.3s;
+        }
+        .status-msg.error { color: var(--err); }
+        .status-msg.success { color: var(--ok); }
+        .status-msg.info { color: var(--accent); }
+
+        /* Connect button */
+        .connect-btn {
+            width: 100%; padding: 16px; border: none; border-radius: 12px;
+            background: var(--grad); color: white; font-family: 'Inter', sans-serif;
+            font-size: 15px; font-weight: 700; cursor: pointer; transition: all 0.3s;
+            box-shadow: 0 4px 20px rgba(var(--accent-rgb),0.3);
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .connect-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(var(--accent-rgb),0.4);
+        }
+        .connect-btn:disabled {
+            opacity: 0.4; cursor: not-allowed; transform: none;
+            box-shadow: 0 4px 20px rgba(var(--accent-rgb),0.1);
+        }
+
+        .spinner {
+            display: inline-block; width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3); border-top-color: white;
+            border-radius: 50%; animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Info footer */
+        .info-footer {
+            margin-top: 24px; font-size: 11px; color: var(--text-d); line-height: 1.8;
+        }
+        .info-footer .highlight { color: var(--accent); font-weight: 600; }
+
+        /* Floating particles */
+        .particle {
+            position: fixed; width: 3px; height: 3px; border-radius: 50%;
+            background: rgba(var(--accent-rgb), 0.3); pointer-events: none; z-index: 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="tbar">
+    <div class="tbar-brand"><div class="ico">⚡</div><span>SharingIsCaring</span></div>
+    <div class="tbar-btns">
+        <button class="tb" onclick="wctl('minimize')">─</button>
+        <button class="tb" onclick="wctl('maximize')">□</button>
+        <button class="tb x" onclick="wctl('close')">✕</button>
+    </div>
+</div>
+
+<div class="setup-container">
+    <div class="setup-inner">
+        <div class="logo-icon">🔗</div>
+        <h1 class="setup-title">SharingIsCaring</h1>
+        <p class="setup-subtitle">
+            Join the decentralized compute network.<br>
+            Your device will automatically contribute resources.
+        </p>
+        <div class="setup-note">
+            <span class="dot"></span>
+            Everyone who connects becomes a worker automatically
+        </div>
+
+        <div class="input-card">
+            <div class="input-label">Server URL</div>
+            <div class="url-input-wrap">
+                <input type="text" class="url-input" id="server-url"
+                       placeholder="https://your-server.onrender.com"
+                       autocomplete="off" oninput="validateUrl()" autofocus>
+            </div>
+            <div class="status-msg" id="status-msg"></div>
+        </div>
+
+        <button class="connect-btn" id="connect-btn" disabled onclick="connect()">
+            🔌 Connect & Join Network
+        </button>
+
+        <div class="info-footer">
+            Your device will <span class="highlight">automatically</span> share idle compute.<br>
+            Tasks are <span class="highlight">fairly distributed</span> across all connected devices.
+        </div>
+    </div>
+</div>
+
+<script>
+// Floating particles
+for (let i = 0; i < 12; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.left = Math.random() * 100 + '%';
+    p.style.top = Math.random() * 100 + '%';
+    p.style.opacity = Math.random() * 0.5 + 0.1;
+    p.style.animation = `bgFloat ${10 + Math.random() * 20}s ease-in-out infinite`;
+    p.style.animationDelay = -Math.random() * 20 + 's';
+    document.body.appendChild(p);
+}
+
+function validateUrl() {
+    const input = document.getElementById('server-url').value.trim();
+    const btn = document.getElementById('connect-btn');
+    const msg = document.getElementById('status-msg');
+
+    if (!input) {
+        btn.disabled = true;
+        msg.textContent = '';
+        return;
+    }
+
+    // Accept http(s) URLs or plain IP:port
+    const valid = /^https?:\/\/.+/.test(input)
+        || /^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/.test(input);
+
+    if (!valid) {
+        btn.disabled = true;
+        msg.textContent = '⚠️ Enter a valid URL (e.g. https://server.onrender.com or 192.168.1.100:3000)';
+        msg.className = 'status-msg error';
+        return;
+    }
+
+    btn.disabled = false;
+    msg.textContent = '✅ Ready to connect';
+    msg.className = 'status-msg success';
+}
+
+document.getElementById('server-url').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !document.getElementById('connect-btn').disabled) {
+        connect();
+    }
+});
+
+async function connect() {
+    let url = document.getElementById('server-url').value.trim();
+    const btn = document.getElementById('connect-btn');
+    const msg = document.getElementById('status-msg');
+
+    // Auto-add http:// if just IP:port
+    if (/^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/.test(url)) {
+        if (!url.includes(':')) url += ':3000';
+        url = 'http://' + url;
+    }
+
+    // Remove trailing slash
+    url = url.replace(/\/+$/, '');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Connecting...';
+    msg.textContent = '⏳ Checking server...';
+    msg.className = 'status-msg info';
+
+    try {
+        // Test if server is reachable
+        const test = await fetch(url + '/api/stats', { signal: AbortSignal.timeout(8000) });
+        if (!test.ok) throw new Error('Server returned ' + test.status);
+        await test.json();
+
+        msg.textContent = '✅ Server reachable! Joining network...';
+        msg.className = 'status-msg success';
+
+        // Tell Electron to connect
+        if (window.electronAPI) {
+            await window.electronAPI.connectToServer(url);
+        } else {
+            // Browser mode — just redirect
+            window.location.href = url;
+        }
+    } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = '🔌 Connect & Join Network';
+        msg.textContent = '❌ Cannot reach server: ' + (err.message || 'Connection failed');
+        msg.className = 'status-msg error';
+    }
+}
+
+function wctl(a) {
+    if (window.electronAPI) window.electronAPI[a]();
+    else if (a === 'close') window.close();
+}
+</script>
+</body>
+</html>
