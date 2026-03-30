@@ -17,7 +17,7 @@ try {
     cloudinary = require('cloudinary').v2;
 
     // Support either explicit credentials or CLOUDINARY_URL in env.
-    let cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    let cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOOUD_NAME;
     let apiKey = process.env.CLOUDINARY_API_KEY;
     let apiSecret = process.env.CLOUDINARY_API_SECRET;
 
@@ -89,12 +89,22 @@ const upload = cloudinary
 
 function uploadBufferToCloudinary(file) {
     return new Promise((resolve, reject) => {
+        const originalName = file.originalname || 'file';
+        const ext = path.extname(originalName).toLowerCase();
+        const baseName = (path.basename(originalName, ext) || 'file')
+            .replace(/[^a-zA-Z0-9_-]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'file';
+        const publicId = `${Date.now()}-${baseName}${ext}`;
+
         const uploadStream = cloudinary.uploader.upload_stream(
             {
-                resource_type: 'auto',
+                resource_type: 'raw',
                 folder: process.env.CLOUDINARY_FOLDER || undefined,
-                use_filename: true,
-                unique_filename: true
+                public_id: publicId,
+                filename_override: originalName,
+                use_filename: false,
+                unique_filename: false
             },
             (err, result) => {
                 if (err) return reject(err);
