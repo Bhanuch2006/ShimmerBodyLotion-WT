@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useSocket } from '../context/SocketContext';
+import { useTheme } from '../hooks/useTheme';
 
 const Jobs = () => {
     const { jobs } = useSocket();
+    const theme = useTheme();
     const [selectedJob, setSelectedJob] = useState(null);
 
     const dur = (j) => {
@@ -12,7 +14,7 @@ const Jobs = () => {
 
     return (
         <section className="sec on" id="sec-jobs">
-            <h1 className="stitle">Submit Jobsr</h1>
+            <h1 className="stitle"><span className="t-ico" data-type="jobs"></span> Submitted Jobs</h1>
             <div className="card">
                 <div id="jList">
                     {jobs.length === 0 ? (

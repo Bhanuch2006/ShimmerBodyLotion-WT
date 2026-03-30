@@ -10,11 +10,33 @@ export const useSocket = () => {
 export const SocketProvider = ({ children }) => {
     const [socket, setSocket] = useState(null);
     const [connected, setConnected] = useState(false);
+    // Start with localhost - this is the default for dev/Electron
     const [currentUrl, setCurrentUrl] = useState('http://localhost:3000');
     
     // Global state arrays updated directly by socket events
     const [workers, setWorkers] = useState([]);
     const [jobs, setJobs] = useState([]);
+
+    useEffect(() => {
+        // Try to get server URL from Electron config on mount
+        if (window.electronAPI?.getServerUrl) {
+            console.log('[SocketContext] Getting server URL from Electron...');
+            window.electronAPI.getServerUrl()
+                .then(url => {
+                    if (url) {
+                        console.log(`[SocketContext] Loaded server URL: ${url}`);
+                        setCurrentUrl(url);
+                    } else {
+                        console.log('[SocketContext] No URL from Electron, using default: http://localhost:3000');
+                    }
+                })
+                .catch(err => {
+                    console.warn('[SocketContext] Failed to get server URL, using default:', err);
+                });
+        } else {
+            console.log('[SocketContext] Not in Electron, using default: http://localhost:3000');
+        }
+    }, []);
     const [stats, setStats] = useState({
         totalJobs: 0,
         completedJobs: 0,

@@ -1,21 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useSocket } from '../context/SocketContext';
+import { useTheme } from '../hooks/useTheme';
 
 const ConnectDevice = () => {
-    const { connectToNetwork } = useSocket();
+    const { connectToNetwork, currentUrl } = useSocket();
+    const theme = useTheme();
     const [joinIp, setJoinIp] = useState('');
     const [networkInfo, setNetworkInfo] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        axios.get('http://localhost:3000/api/network-info')
+        axios.get(`${currentUrl}/api/network-info`)
             .then(res => {
                 setNetworkInfo(res.data);
                 setLoading(false);
             })
             .catch(() => setLoading(false));
-    }, []);
+    }, [currentUrl]);
 
     const handleJoin = () => {
         if (!joinIp) return;
@@ -30,7 +32,7 @@ const ConnectDevice = () => {
 
     return (
         <section className="sec on" id="sec-connect">
-            <h1 className="stitle">Extend Horizon</h1>
+            <h1 className="stitle"><span className="t-ico" data-type="howto"></span> How to</h1>
             
             <div className="conn-card">
                 <h3>🔗 Join a Network</h3>

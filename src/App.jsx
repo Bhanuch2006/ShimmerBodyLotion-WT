@@ -11,6 +11,10 @@ import Jobs from './pages/Jobs';
 import ConnectDevice from './pages/ConnectDevice';
 import Sidebar from './components/Sidebar';
 import GlitterTrail from './components/GlitterTrail';
+import NetworkCanvas from './components/NetworkCanvas';
+import CustomCursor from './components/CustomCursor';
+import JobOfferModal from './components/JobOfferModal';
+import { useTheme } from './hooks/useTheme';
 
 // Window Controls Component (Electron)
 const WindowControls = () => {
@@ -74,7 +78,7 @@ class ErrorBoundary extends React.Component {
         if (this.state.hasError) {
             return (
                 <div style={{ padding: '40px', background: '#1c1c1c', color: '#ff8da1', fontFamily: 'monospace' }}>
-                    <h2>🎀 Something went wrong in the Archive...</h2>
+                    <h2>Something went wrong in the Dashboard...</h2>
                     <pre>{this.state.error?.toString()}</pre>
                 </div>
             );
@@ -84,18 +88,19 @@ class ErrorBoundary extends React.Component {
 }
 
 function App() {
-    // Determine initial theme
-    const [theme, setTheme] = useState(localStorage.getItem('theme') || 'coquette');
+    const theme = useTheme();
 
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
         document.body.setAttribute('data-theme', theme);
-        console.log('[Electron App] Mounted with theme:', theme);
     }, [theme]);
 
     return (
         <ErrorBoundary>
+            <CustomCursor theme={theme} />
             <GlitterTrail theme={theme} />
+            <NetworkCanvas theme={theme} />
+            <JobOfferModal />
             <SocketProvider>
                 <Router>
                     <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>

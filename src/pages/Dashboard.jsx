@@ -1,11 +1,42 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
+import { useTheme } from '../hooks/useTheme';
 
 const Dashboard = () => {
-    const { stats, workers, jobs } = useSocket();
+    const { stats, workers, jobs, currentUrl } = useSocket();
+    const theme = useTheme();
+    const [isStarting, setIsStarting] = useState(false);
+    const [localWorkerRunning, setLocalWorkerRunning] = useState(false);
+    const [workerLog, setWorkerLog] = useState('Local node is currently idle.');
 
     const activeWorkersCount = workers.filter(w => w.status === 'online').length;
     const recentJobs = jobs.slice(0, 6);
+
+    useEffect(() => {
+        if (window.electronAPI) {
+            window.electronAPI.onWorkerStatus((running) => {
+                setLocalWorkerRunning(running);
+                setIsStarting(false);
+            });
+            window.electronAPI.onWorkerMessage((msg) => {
+                if (msg.type === 'STATUS') {
+                    setWorkerLog(msg.text);
+                }
+            });
+        }
+    }, []);
+
+    const toggleComputeNode = async () => {
+        if (!window.electronAPI) return;
+        setIsStarting(true);
+        const res = await window.electronAPI.toggleWorker(!localWorkerRunning, currentUrl);
+        if (res.status === 'stopped') {
+            setLocalWorkerRunning(false);
+            setWorkerLog('Local node is currently idle.');
+        } else {
+            setWorkerLog('Initializing worker components...');
+        }
+    };
 
     const dur = (j) => {
         if (!j.startedAt) return '—';
@@ -14,6 +45,28 @@ const Dashboard = () => {
 
     return (
         <section className="sec on" id="sec-dash">
+            {/* Local Compute Control */}
+            {window.electronAPI && (
+                <div className="card" style={{ marginBottom: '20px', background: 'linear-gradient(135deg, rgba(142, 202, 230, 0.1) 0%, rgba(33, 158, 188, 0.1) 100%)', border: '1px solid var(--accent-low)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                            <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--accent)' }}>🚀 Local Compute Node</h3>
+                            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-m)' }}>
+                                {workerLog}
+                            </p>
+                        </div>
+                        <button 
+                            className={`btn ${localWorkerRunning ? 'btn-s' : 'btn-p'}`}
+                            onClick={toggleComputeNode}
+                            disabled={isStarting}
+                            style={{ padding: '10px 24px', minWidth: '140px' }}
+                        >
+                            {isStarting ? 'Processing...' : localWorkerRunning ? 'Stop Node' : 'Start Node'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <div className="sgrid">
                 <div className="scard"><div className="si">📜</div><div className="sv">{stats.totalJobs}</div><div className="sl2">Total Jobs</div></div>
                 <div className="scard"><div className="si">🦢</div><div className="sv">{activeWorkersCount}</div><div className="sl2">Active Workers</div></div>
@@ -23,10 +76,10 @@ const Dashboard = () => {
 
             <div className="dgrid">
                 <div className="card">
-                    <div className="ctitle">🦢 Companions</div>
+                    <div className="ctitle"><span className="t-ico" data-type="devices"></span> Connected Devices</div>
                     <div id="dW">
                         {workers.length === 0 ? (
-                            <p className="empty">No companions connected</p>
+                            <p className="empty">No connected devices</p>
                         ) : (
                             workers.map((w, idx) => (
                                 <div className="wcard" key={idx}>
@@ -54,7 +107,7 @@ const Dashboard = () => {
                 </div>
 
                 <div className="card">
-                    <div className="ctitle">📜 Dashboard</div>
+                    <div className="ctitle"><span className="t-ico" data-type="jobs"></span> Recent Jobs</div>
                     <div id="dJ">
                         {recentJobs.length === 0 ? (
                             <p className="empty">No jobs yet</p>
