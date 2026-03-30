@@ -10,25 +10,13 @@ const NetworkCanvas = ({ theme }) => {
         const ctx = canvas.getContext('2d');
         let animationFrameId;
 
-        // Configuration
-        const particles = [];
-        const numParticles = 80;
-        const connectionDistance = 140;
-        const interactionRadius = 200;
-
-        let mouse = { x: -1000, y: -1000 };
+        let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 
         const handleMouseMove = (e) => {
             mouse.x = e.clientX;
             mouse.y = e.clientY;
         };
-        const handleMouseLeave = () => {
-            mouse.x = -1000;
-            mouse.y = -1000;
-        };
-
         window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseout', handleMouseLeave);
 
         const resize = () => {
             canvas.width = window.innerWidth;
@@ -38,80 +26,88 @@ const NetworkCanvas = ({ theme }) => {
         window.addEventListener('resize', resize);
         resize();
 
-        class Particle {
+        class Star {
             constructor() {
                 this.x = Math.random() * canvas.width;
                 this.y = Math.random() * canvas.height;
-                this.vx = (Math.random() - 0.5) * 0.8;
-                this.vy = (Math.random() - 0.5) * 0.8;
-                this.baseSize = Math.random() * 2 + 1;
-                this.size = this.baseSize;
+                this.size = Math.random() * 1.5;
+                this.depth = Math.random() * 3 + 1; // 1 to 4
+                this.baseX = this.x;
+                this.baseY = this.y;
+                this.twinkle = Math.random();
+                this.twinkleSpeed = (Math.random() - 0.5) * 0.05;
+                this.color = Math.random() > 0.8 ? '#00e5ff' : Math.random() > 0.8 ? '#b026ff' : '#ffffff';
             }
 
-            update() {
-                this.x += this.vx;
-                this.y += this.vy;
+            update(mx, my) {
+                // Parallax shift based on mouse relative to center
+                const dx = (mx - canvas.width / 2) * (this.depth * 0.05);
+                const dy = (my - canvas.height / 2) * (this.depth * 0.05);
+                
+                // Slow drift
+                this.baseY -= this.depth * 0.1;
+                if (this.baseY < -10) this.baseY = canvas.height + 10;
+                
+                this.x = this.baseX - dx;
+                this.y = this.baseY - dy;
 
-                // Bounce off edges
-                if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
-                if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
-
-                // Interaction with mouse
-                const dx = mouse.x - this.x;
-                const dy = mouse.y - this.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-
-                if (distance < interactionRadius) {
-                    // Push particles slightly away
-                    const forceDirectionX = dx / distance;
-                    const forceDirectionY = dy / distance;
-                    const force = (interactionRadius - distance) / interactionRadius;
-                    
-                    this.x -= forceDirectionX * force * 2;
-                    this.y -= forceDirectionY * force * 2;
-                    this.size = this.baseSize * 1.5;
-                } else {
-                    this.size = this.baseSize;
-                }
+                this.twinkle += this.twinkleSpeed;
+                if (this.twinkle > 1 || this.twinkle < 0.2) this.twinkleSpeed *= -1;
             }
 
             draw() {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(56, 189, 248, 0.4)'; // Cyan nodes
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = this.twinkle;
                 ctx.fill();
+                ctx.globalAlpha = 1;
             }
         }
 
-        // Initialize particles
-        for (let i = 0; i < numParticles; i++) {
-            particles.push(new Particle());
+        const stars = [];
+        for (let i = 0; i < 200; i++) {
+            stars.push(new Star());
         }
+
+        let time = 0;
 
         const animate = () => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // Dark cosmic background
+            ctx.fillStyle = '#05030a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Update & draw particles
-            for (let i = 0; i < particles.length; i++) {
-                particles[i].update();
-                particles[i].draw();
+            // Time tick for nebulas
+            time += 0.005;
 
-                // Draw connections
-                for (let j = i; j < particles.length; j++) {
-                    const dx = particles[i].x - particles[j].x;
-                    const dy = particles[i].y - particles[j].y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
+            // Draw Nebula Clouds
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
 
-                    if (distance < connectionDistance) {
-                        ctx.beginPath();
-                        ctx.strokeStyle = `rgba(129, 140, 248, ${1 - distance / connectionDistance})`; // Purple-ish lines
-                        ctx.lineWidth = 1;
-                        ctx.moveTo(particles[i].x, particles[i].y);
-                        ctx.lineTo(particles[j].x, particles[j].y);
-                        ctx.stroke();
-                    }
-                }
+            // Nebula 1 (Cyan)
+            const n1x = cx + Math.cos(time) * 200;
+            const n1y = cy + Math.sin(time * 0.8) * 150;
+            const grd1 = ctx.createRadialGradient(n1x, n1y, 0, n1x, n1y, 800);
+            grd1.addColorStop(0, 'rgba(0, 229, 255, 0.08)');
+            grd1.addColorStop(1, 'rgba(0, 229, 255, 0)');
+            ctx.fillStyle = grd1;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Nebula 2 (Purple)
+            const n2x = cx + Math.sin(time * 1.2) * 250;
+            const n2y = cy + Math.cos(time * 0.9) * 200;
+            const grd2 = ctx.createRadialGradient(n2x, n2y, 0, n2x, n2y, 800);
+            grd2.addColorStop(0, 'rgba(176, 38, 255, 0.08)');
+            grd2.addColorStop(1, 'rgba(176, 38, 255, 0)');
+            ctx.fillStyle = grd2;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Update & draw stars
+            for (let i = 0; i < stars.length; i++) {
+                stars[i].update(mouse.x, mouse.y);
+                stars[i].draw();
             }
+
             animationFrameId = requestAnimationFrame(animate);
         };
 
@@ -119,7 +115,6 @@ const NetworkCanvas = ({ theme }) => {
 
         return () => {
             window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseout', handleMouseLeave);
             window.removeEventListener('resize', resize);
             cancelAnimationFrame(animationFrameId);
         };
@@ -137,8 +132,7 @@ const NetworkCanvas = ({ theme }) => {
                 width: '100vw',
                 height: '100vh',
                 pointerEvents: 'none',
-                zIndex: -1,
-                background: 'linear-gradient(135deg, #09090b 0%, #0f172a 100%)' // Dark slate base
+                zIndex: -1
             }}
         />
     );

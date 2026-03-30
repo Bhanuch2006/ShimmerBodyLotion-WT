@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useSocket } from '../context/SocketContext';
+import { useTheme } from '../hooks/useTheme';
 
 const ConnectDevice = () => {
     const { connectToNetwork } = useSocket();
+    const theme = useTheme();
     const [joinIp, setJoinIp] = useState('');
     const [networkInfo, setNetworkInfo] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -30,7 +32,7 @@ const ConnectDevice = () => {
 
     return (
         <section className="sec on" id="sec-connect">
-            <h1 className="stitle">Extend Horizon</h1>
+            <h1 className="stitle"><span className="t-ico" data-type="howto"></span> {theme === 'coquette' ? 'Extend Horizon' : 'How to'}</h1>
             
             <div className="conn-card">
                 <h3>🔗 Join a Network</h3>

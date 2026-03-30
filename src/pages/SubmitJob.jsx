@@ -1,8 +1,10 @@
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '../hooks/useTheme';
 
 const SubmitJob = () => {
+    const theme = useTheme();
     const [files, setFiles] = useState([]);
     const [isOver, setIsOver] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -70,7 +72,7 @@ const SubmitJob = () => {
 
     return (
         <section className="sec on" id="sec-submit">
-            <h1 className="stitle">Exchange Letters</h1>
+            <h1 className="stitle"><span className="t-ico" data-type="submit"></span> {theme === 'coquette' ? 'Exchange Letters' : 'Submit Tasks'}</h1>
             <div className="card">
                 <div 
                     className={`dz ${isOver ? 'over' : ''}`} 
