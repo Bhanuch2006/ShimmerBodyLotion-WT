@@ -7,6 +7,23 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
+const cloudinary = require('cloudinary').v2;
+const { Readable } = require('stream');
+
+// ==================== CLOUDINARY SETUP ====================
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+if (!cloudinary.config().cloud_name) {
+    console.error('❌ ERROR: Cloudinary credentials not found!');
+    console.error('   Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET');
+    process.exit(1);
+}
+
+console.log(`☁️ Cloudinary configured: ${cloudinary.config().cloud_name}`);
 
 const app = express();
 const server = http.createServer(app);
@@ -33,59 +50,83 @@ const jobs = new Map();          // jobId -> job data
 const jobQueue = [];             // pending job IDs
 let roundRobinIndex = 0;         // for fair round-robin scheduling
 
-// ==================== FILE STORAGE (IN-MEMORY) ====================
-// Store files in memory instead of disk (works better on Render's ephemeral filesystem)
-const fileStorage = new Map(); // filename -> file content + metadata
-
-const storage = multer.memoryStorage(); // Keep files in RAM
+// ==================== FILE UPLOAD (Cloudinary) ====================
+const storage = multer.memoryStorage();
 const upload = multer({ 
     storage,
     limits: { fileSize: 100 * 1024 * 1024 } // 100MB max
 });
 
-app.post('/upload', upload.array('files'), (req, res) => {
+app.post('/upload', upload.array('files'), async (req, res) => {
     if (!req.files || req.files.length === 0) {
         console.error('❌ Upload failed: No files received');
         return res.status(400).json({ error: 'No files uploaded' });
     }
     
-    console.log(`📤 Upload received: ${req.files.length} files`);
+    console.log(`📤 Uploading to Cloudinary: ${req.files.length} files`);
     const files = [];
     
-    for (const file of req.files) {
-        const fileName = `${Date.now()}-${file.originalname}`;
-        fileStorage.set(fileName, {
-            buffer: file.buffer,
-            mimetype: file.mimetype,
-            size: file.size,
-            uploadedAt: Date.now()
-        });
+    try {
+        for (const file of req.files) {
+            const fileName = `${Date.now()}-${file.originalname}`;
+            
+            // Upload to Cloudinary using stream
+            await new Promise((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream(
+                    {
+                        resource_type: 'auto',
+                        public_id: fileName.replace(/\./g, '-'), // Remove dots for public_id
+                        folder: 'sharingiscaring-uploads'
+                    },
+                    (error, result) => {
+                        if (error) reject(error);
+                        else {
+                            console.log(`   ✅ ${file.originalname} (${file.size} bytes) -> ${result.secure_url}`);
+                            files.push({
+                                name: fileName,
+                                url: result.secure_url,
+                                public_id: result.public_id
+                            });
+                            resolve();
+                        }
+                    }
+                );
+                stream.end(file.buffer);
+            });
+        }
         
-        console.log(`   - ${file.originalname} (${file.size} bytes) -> stored in memory`);
-        files.push(`uploads/${fileName}`);
+        console.log(`✅ Upload complete. ${files.length} files on Cloudinary.`);
+        res.json({ 
+            files: files.map(f => `uploads/${f.name}|${f.url}|${f.public_id}`)
+        });
+    } catch (err) {
+        console.error('❌ Upload to Cloudinary failed:', err.message);
+        res.status(500).json({ error: 'Upload failed: ' + err.message });
     }
-    
-    console.log(`✅ Upload complete. ${files.length} files in memory.`);
-    res.json({ files });
 });
 
-// ==================== FILE DOWNLOAD ====================
-app.get('/uploads/:filename', (req, res) => {
-    const fileName = req.params.filename;
-    const fileData = fileStorage.get(fileName);
-    
-    if (!fileData) {
-        console.error(`❌ Download failed: File not found - ${fileName}`);
-        return res.status(404).json({ error: 'File not found' });
+// ==================== FILE DOWNLOAD (from Cloudinary) ====================
+app.get('/uploads/:filename', async (req, res) => {
+    try {
+        const fileName = req.params.filename;
+        // Parse the special format: filename|url|public_id
+        const parts = fileName.split('|');
+        
+        if (parts.length >= 2) {
+            const cloudinaryUrl = parts[1];
+            console.log(`⬇️ Serving from Cloudinary: ${fileName.split('|')[0]}`);
+            
+            // Redirect to Cloudinary URL (faster than proxying)
+            return res.redirect(cloudinaryUrl);
+        }
+        
+        // Fallback for old format
+        console.error(`❌ Invalid file format: ${fileName}`);
+        res.status(404).json({ error: 'File not found' });
+    } catch (err) {
+        console.error('❌ Download failed:', err.message);
+        res.status(500).json({ error: 'Download failed' });
     }
-    
-    console.log(`⬇️ Downloading: ${fileName} (${fileData.size} bytes)`);
-    res.setHeader('Content-Type', fileData.mimetype);
-    res.setHeader('Content-Length', fileData.size);
-    res.send(fileData.buffer);
-    
-    // Clean up after download (optional - can keep if multiple workers need it)
-    // fileStorage.delete(fileName);
 });
 
 // ==================== WORKER REGISTRATION ====================
@@ -389,25 +430,6 @@ setInterval(() => {
     }
 }, 10000);
 
-// ==================== FILE CLEANUP (in-memory storage) ====================
-// Remove files older than 30 minutes (prevents memory leaks)
-setInterval(() => {
-    const now = Date.now();
-    const maxAge = 30 * 60 * 1000; // 30 minutes
-    let cleaned = 0;
-    
-    for (const [fileName, fileData] of fileStorage) {
-        if (now - fileData.uploadedAt > maxAge) {
-            fileStorage.delete(fileName);
-            cleaned++;
-        }
-    }
-    
-    if (cleaned > 0) {
-        console.log(`🧹 Cleaned up ${cleaned} old files from memory`);
-    }
-}, 60000); // Check every minute
-
 // ==================== REST API ====================
 app.get('/api/workers', (req, res) => {
     // Only return online workers
@@ -420,8 +442,8 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         serverUrl,
-        filesInMemory: fileStorage.size,
-        storageType: 'in-memory (optimal for Render)'
+        storage: 'Cloudinary',
+        cloudName: cloudinary.config().cloud_name
     });
 });
 
