@@ -38,3 +38,4 @@ out/
 dist/
 
 .electron_data/
+..server-config.json

@@ -121,7 +121,7 @@ process.on('message', (msg = {}) => {
     clearTimeout(activeJobOffer.timer);
     activeJobOffer = null;
 
-    if (type === 'JOB_ACCEPTED') {
+    if (type === 'J\OB_ACCEPTED') {
         done(true);
         return;
     }
