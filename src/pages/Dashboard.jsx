@@ -25,10 +25,10 @@ const Dashboard = () => {
 
             <div className="dgrid">
                 <div className="card">
-                    <div className="ctitle"><span className="t-ico" data-type="devices"></span> {theme === 'coquette' ? 'Companions' : 'Connected Devices'}</div>
+                    <div className="ctitle"><span className="t-ico" data-type="devices"></span> Connected Devices</div>
                     <div id="dW">
                         {workers.length === 0 ? (
-                            <p className="empty">{theme === 'coquette' ? 'No companions connected' : 'No connected devices'}</p>
+                            <p className="empty">No connected devices</p>
                         ) : (
                             workers.map((w, idx) => (
                                 <div className="wcard" key={idx}>
@@ -56,7 +56,7 @@ const Dashboard = () => {
                 </div>
 
                 <div className="card">
-                    <div className="ctitle"><span className="t-ico" data-type="jobs"></span> {theme === 'coquette' ? 'Dashboard' : 'Recent Jobs'}</div>
+                    <div className="ctitle"><span className="t-ico" data-type="jobs"></span> Recent Jobs</div>
                     <div id="dJ">
                         {recentJobs.length === 0 ? (
                             <p className="empty">No jobs yet</p>

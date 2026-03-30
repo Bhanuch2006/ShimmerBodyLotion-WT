@@ -14,7 +14,7 @@ const Jobs = () => {
 
     return (
         <section className="sec on" id="sec-jobs">
-            <h1 className="stitle"><span className="t-ico" data-type="jobs"></span> {theme === 'coquette' ? 'The Ledger' : 'Submitted Jobs'}</h1>
+            <h1 className="stitle"><span className="t-ico" data-type="jobs"></span> Submitted Jobs</h1>
             <div className="card">
                 <div id="jList">
                     {jobs.length === 0 ? (

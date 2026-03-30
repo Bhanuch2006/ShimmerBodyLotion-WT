@@ -120,7 +120,7 @@ const SubmitJob = () => {
 
     return (
         <section className="sec on" id="sec-submit">
-            <h1 className="stitle"><span className="t-ico" data-type="submit"></span> {theme === 'coquette' ? 'Exchange Letters' : 'Submit Tasks'}</h1>
+            <h1 className="stitle">Exchange Letters</h1>
             <div className="card" style={{ maxWidth: '800px', margin: '0 auto' }}>
 
                 <div style={{ marginBottom: '20px' }}>
@@ -134,6 +134,7 @@ const SubmitJob = () => {
                     />
                 </div>
 
+                <h1 className="stitle"><span className="t-ico" data-type="submit"></span> {theme === 'coquette' ? 'Exchange Letters' : 'Submit Tasks'}</h1>
                 <div className="card">
                     <div
                         className={`dz ${isOver ? 'over' : ''}`}
@@ -198,7 +199,7 @@ const SubmitJob = () => {
                             onClick={submitJob}
                             disabled={!files.length || submitting || !description.trim()}
                         >
-                            {submitting ? '⏳ Dispatching...' : '💌 Send Letters'}
+                            {submitting ? '⏳ Dispatching...' : '💌 Submit Tasks'}
                         </button>
                     </div>
                 </div>

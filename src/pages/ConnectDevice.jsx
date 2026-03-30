@@ -32,7 +32,7 @@ const ConnectDevice = () => {
 
     return (
         <section className="sec on" id="sec-connect">
-            <h1 className="stitle"><span className="t-ico" data-type="howto"></span> {theme === 'coquette' ? 'Extend Horizon' : 'How to'}</h1>
+            <h1 className="stitle"><span className="t-ico" data-type="howto"></span> How to</h1>
             
             <div className="conn-card">
                 <h3>🔗 Join a Network</h3>

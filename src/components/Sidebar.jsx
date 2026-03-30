@@ -46,16 +46,16 @@ const Sidebar = () => {
                     <img src="/assets/dino.png" alt="Dino" className="dino-logo" style={{ display: theme === 'pink' ? 'block' : 'none' }} />
                 </div>
                 <div className="dino-ground"></div>
-                <h2>{theme === 'coquette' ? 'Cloud Archive' : 'Compute Core'}</h2>
+                <h2>{theme === 'coquette' ? 'Dashboard' : 'Compute Core'}</h2>
                 <p>{theme === 'coquette' ? 'Lace & Ribbon Network' : 'Distributed Processing'}</p>
             </div>
 
             <nav className="nav">
-                <NavLink to="/" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🎀' : '🌌'}</span>{theme === 'coquette' ? 'The Archive' : 'Dashboard'}</NavLink>
-                <NavLink to="/submit" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '💌' : '🛰️'}</span>{theme === 'coquette' ? 'Exchange Letters' : 'Submit Tasks'}</NavLink>
-                <NavLink to="/workers" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🦢' : '🛸'}</span>{theme === 'coquette' ? 'Companions' : 'Connected Devices'}</NavLink>
-                <NavLink to="/jobs" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '📜' : '📡'}</span>{theme === 'coquette' ? 'The Ledger' : 'Submitted Jobs'}</NavLink>
-                <NavLink to="/connect" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🗝️' : '🪐'}</span>{theme === 'coquette' ? 'Extend Horizon' : 'How to'}</NavLink>
+                <NavLink to="/" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🎀' : '🌌'}</span>Dashboard</NavLink>
+                <NavLink to="/submit" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '💌' : '🛰️'}</span>Submit Tasks</NavLink>
+                <NavLink to="/workers" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🦢' : '🛸'}</span>Connected Devices</NavLink>
+                <NavLink to="/jobs" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '📜' : '📡'}</span>Submitted Jobs</NavLink>
+                <NavLink to="/connect" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🗝️' : '🪐'}</span>How to</NavLink>
             </nav>
 
             <div className="theme-box">
