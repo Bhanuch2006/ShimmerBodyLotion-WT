@@ -8,9 +8,9 @@ const os = require('os');
 const app = express();
 app.use(express.json());
 
-const PORT = process.env.WORKER_PORT || 4000;
+const initialPort = parseInt(process.env.WORKER_PORT) || 4000;
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
-const workerUrl = process.env.WORKER_URL || `http://localhost:${PORT}`;
+let workerUrl = process.env.WORKER_URL || `http://localhost:${initialPort}`;
 
 // ==================== SYSTEM CAPABILITIES ====================
 function getCapabilities() {
@@ -173,9 +173,25 @@ app.post('/execute', async (req, res) => {
 });
 
 // ==================== START ====================
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Worker running at ${workerUrl}`);
-    console.log(`   Docker: ${capabilities.dockerAvailable ? '✅' : '❌'}`);
-    console.log(`   GPU: ${capabilities.gpuAvailable ? capabilities.gpuModel : '❌'}`);
-    registerWorker();
-});
+function startWorkerServer(port) {
+    const server = app.listen(port, '0.0.0.0', () => {
+        const actualPort = server.address().port;
+        workerUrl = process.env.WORKER_URL || `http://localhost:${actualPort}`;
+        console.log(`🚀 Worker running at ${workerUrl}`);
+        console.log(`   Docker: ${capabilities.dockerAvailable ? '✅' : '❌'}`);
+        console.log(`   GPU: ${capabilities.gpuAvailable ? capabilities.gpuModel : '❌'}`);
+        registerWorker();
+    }).on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.log(`⚠️ Port ${port} is in use, trying a random port...`);
+            setTimeout(() => {
+                server.close();
+                startWorkerServer(0);
+            }, 500);
+        } else {
+            console.error('🔥 Server start error:', err.message);
+        }
+    });
+}
+
+startWorkerServer(initialPort);

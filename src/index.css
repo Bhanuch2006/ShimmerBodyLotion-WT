@@ -1,50 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-
-
-[data-theme="dark"] {
-    --bg-0: #060612; --bg-1: #0c0c24; --bg-2: #13132e;
-    --bg-card: rgba(255,255,255,0.035); --bg-card-h: rgba(255,255,255,0.06);
-    --border: rgba(255,255,255,0.07); --border-h: rgba(255,255,255,0.14);
-    --text: #e2e8f0; --text-m: #94a3b8; --text-d: #475569;
-    --accent: #818cf8; --accent-rgb: 129,140,248;
-    --accent2: #a78bfa;
-    --grad: linear-gradient(135deg, #667eea, #764ba2);
-    --grad2: linear-gradient(135deg, #4facfe, #00f2fe);
-    --grad3: linear-gradient(135deg, #43e97b, #38f9d7);
-    --grad4: linear-gradient(135deg, #f093fb, #f5576c);
-    --ok: #34d399; --warn: #fbbf24; --err: #f87171;
-    --shadow: 0 8px 32px rgba(0,0,0,0.5);
-    --logo-filter: none;
-}
-[data-theme="light"] {
-    --bg-0: #f0f2f5; --bg-1: #ffffff; --bg-2: #f8fafc;
-    --bg-card: rgba(0,0,0,0.025); --bg-card-h: rgba(0,0,0,0.05);
-    --border: rgba(0,0,0,0.08); --border-h: rgba(0,0,0,0.16);
-    --text: #1e293b; --text-m: #64748b; --text-d: #94a3b8;
-    --accent: #6366f1; --accent-rgb: 99,102,241;
-    --accent2: #8b5cf6;
-    --grad: linear-gradient(135deg, #6366f1, #8b5cf6);
-    --grad2: linear-gradient(135deg, #3b82f6, #06b6d4);
-    --grad3: linear-gradient(135deg, #10b981, #14b8a6);
-    --grad4: linear-gradient(135deg, #ec4899, #f43f5e);
+[data-theme="black"] {
+    --bg-0: #0f172a; --bg-1: #1e293b; --bg-2: #334155;
+    --bg-card: rgba(30, 41, 59, 0.7); --bg-card-h: rgba(51, 65, 85, 0.85);
+    --border: rgba(148, 163, 184, 0.15); --border-h: rgba(148, 163, 184, 0.35);
+    --text: #f8fafc; --text-m: #cbd5e1; --text-d: #94a3b8;
+    --accent: #38bdf8; --accent-rgb: 56,189,248;
+    --accent2: #818cf8;
+    --grad: linear-gradient(145deg, #1e293b, #0f172a);
+    --grad2: linear-gradient(135deg, #38bdf8, #818cf8);
+    --grad3: linear-gradient(135deg, #10b981, #34d399); 
+    --grad4: linear-gradient(135deg, #3b82f6, #60a5fa);
     --ok: #10b981; --warn: #f59e0b; --err: #ef4444;
-    --shadow: 0 8px 32px rgba(0,0,0,0.08);
+    --shadow: 0 10px 40px rgba(0,0,0,1), 0 0 20px rgba(56,189,248,0.1);
     --logo-filter: none;
 }
-[data-theme="pink"] {
-    --bg-0: #140812; --bg-1: #1e0e1c; --bg-2: #281428;
-    --bg-card: rgba(255,80,160,0.04); --bg-card-h: rgba(255,80,160,0.08);
-    --border: rgba(255,80,160,0.1); --border-h: rgba(255,80,160,0.2);
-    --text: #fce7f3; --text-m: #f9a8d4; --text-d: #be185d;
-    --accent: #ec4899; --accent-rgb: 236,72,153;
-    --accent2: #f472b6;
-    --grad: linear-gradient(135deg, #ec4899, #f43f5e);
-    --grad2: linear-gradient(135deg, #f472b6, #fb7185);
-    --grad3: linear-gradient(135deg, #34d399, #2dd4bf);
-    --grad4: linear-gradient(135deg, #c084fc, #a855f7);
-    --ok: #34d399; --warn: #fbbf24; --err: #fb7185;
-    --shadow: 0 8px 32px rgba(120,0,60,0.4);
+
+[data-theme="black"], [data-theme="black"] * {
+    font-family: 'Space Grotesk', sans-serif !important;
+}
+
+[data-theme="black"] body {
+    background-color: var(--bg-0);
+    background-image: none; /* Replaced by interactive NetworkCanvas */
+    background-size: cover;
+    background-attachment: fixed;
 }
 
 [data-theme="coquette"], [data-theme="coquette"] * {
@@ -60,10 +42,10 @@
     --bg-card: rgba(255,255,255, 0.85); /* Frosted Pure White */
     --bg-card-h: rgba(255,255,255, 0.95);
     --border: #FFC2BA; /* Mapped to #FFC2BA */
-    --border-h: #AD56C4; /* Purple for interaction */
+    --border-h: #FF9CE9; /* Purple for interaction */
     
-    /* Glowing Hearts Background */
-    --bg-pattern: url('data:image/svg+xml;utf8,<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path filter="drop-shadow(0px 0px 5px %23FF8DA1)" d="M25 40c-5-10-15-5-15 5s10 15 15 20c5-5 15-10 15-20s-10-15-15-5zM75 15c-3-6-9-3-9 3s6 9 9 12c3-3 9-6 9-12s-6-9-9-3zM85 70c-4-8-12-4-12 4s8 12 12 16c4-4 12-8 12-16s-8-12-12-4zM20 10c-2-4-6-2-6 2s4 6 6 8c2-2 6-4 6-8s-4-6-6-2z" fill="%23FF9CE9" opacity="0.4" /></svg>');
+    /* Highly Girly Hearts & Sparkles Background */
+    --bg-pattern: url('data:image/svg+xml;utf8,<svg width="150" height="150" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg"><path filter="drop-shadow(0px 0px 8px %23FF8DA1)" d="M35 50c-7-14-21-7-21 7s14 21 21 28c7-7 21-14 21-28s-14-21-21-7z" fill="%23FF9CE9" opacity="0.6" /><path filter="drop-shadow(0px 0px 5px %23FF8DA1)" d="M120 20c-4-8-12-4-12 4s8 12 12 16c4-4 12-8 12-16s-8-12-12-4z" fill="%23FFC2BA" opacity="0.8" /><circle cx="80" cy="80" r="4" fill="%23FF9CE9" opacity="0.7"/><circle cx="10" cy="110" r="3" fill="%23FFC2BA" opacity="0.8"/><path d="M130 140 Q 120 130, 140 120 T 150 140" stroke="%23FF8DA1" stroke-width="2" fill="none" opacity="0.6"/><path d="M20 90 Q 10 80, 30 70 T 40 90" stroke="%23FF9CE9" stroke-width="2" fill="none" opacity="0.5"/></svg>');
     
     --text: #4c433c; /* Elegant dark brown text */
     --text-m: #AD56C4; /* Purple */
@@ -78,25 +60,36 @@
     --ok: #B2AC88; /* Sage Green */
     --warn: #FFC2BA; /* Peach Pink */
     --err: #FF8DA1;
-    --shadow: 0 4px 25px rgba(173,86,196,0.18); /* Soft purple-pink shadow */
+    --shadow: 0 4px 25px rgba(255,141,161,0.15); /* Soft pink shadow */
     --logo-filter: saturate(1.2) hue-rotate(-5deg);
 }
 
 [data-theme="coquette"] body {
     background-color: var(--bg-0);
     background-image: var(--bg-pattern);
-    background-size: 250px;
+    background-size: 150px 150px;
+    animation: drift 20s linear infinite;
+}
+@keyframes drift {
+    0% { background-position: 0px 0px; }
+    100% { background-position: 150px 150px; }
 }
 
 /* Coquette specifics - Lace and Ribbon aesthetic */
 [data-theme="coquette"] .card, [data-theme="coquette"] .wcard, [data-theme="coquette"] .scard, [data-theme="coquette"] .conn-card, [data-theme="coquette"] .sysbox, [data-theme="coquette"] .theme-box, [data-theme="coquette"] .wbox, [data-theme="coquette"] .wdcard { 
-    border: 3px double var(--border); 
-    border-radius: 4px; 
-    box-shadow: var(--shadow); 
+    border: 3px dashed var(--border); 
+    border-radius: 12px; 
+    box-shadow: 0 8px 32px rgba(255, 141, 161, 0.15); 
     background: var(--bg-card); 
     position: relative;
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
+}
+[data-theme="coquette"] .card:hover, [data-theme="coquette"] .scard:hover, [data-theme="coquette"] .wdcard:hover {
+    border-style: solid;
+    border-color: #FF9CE9;
+    box-shadow: 0 12px 40px rgba(255, 141, 161, 0.25);
+    transform: translateY(-2px);
 }
 
 /* ==== FLOATING NAVBAR ARCHITECTURE ==== */
@@ -153,22 +146,11 @@
 [data-theme="coquette"] .sysbox { display: none; }
 
 [data-theme="coquette"] .sgrid {
-    padding-top: 20px; 
-    margin-top: 20px; 
+    padding-top: 10px; 
+    margin-top: 10px; 
     gap: 36px;
     position: relative;
     z-index: 10;
-}
-
-[data-theme="coquette"] .sgrid::before {
-    content: '';
-    position: absolute;
-    top: -40px; /* Rod rests 40px distinctly above the cards */
-    left: -20px; right: -20px; height: 8px;
-    background: repeating-linear-gradient(45deg, #d4af37, #d4af37 4px, #f4d068 4px, #f4d068 8px);
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-    z-index: 5;
 }
 
 [data-theme="coquette"] .card::before, [data-theme="coquette"] .conn-card::before, [data-theme="coquette"] .wdcard::before {
@@ -233,92 +215,46 @@
 [data-theme="coquette"] .btn-p:hover { background: var(--accent2); color: #fff; }
 
 [data-theme="coquette"] .scard { 
-    border: 2px solid var(--border); 
-    border-radius: 12px; /* Smooth ticket shape, removing jagged clip-path */
-    box-shadow: 0 15px 35px rgba(173, 86, 196, 0.2); /* Deep shadow */
+    border: 2px dashed var(--border); 
+    border-radius: 12px; 
+    box-shadow: 0 10px 30px rgba(173, 86, 196, 0.08); 
     position: relative;
-    overflow: visible;
-    transform-origin: 50% -40px; /* Pivot at the rod */
-    animation: sway 7s ease-in-out infinite;
-    padding-top: 45px; /* Taller tag */
+    padding-top: 25px; 
     padding-bottom: 25px; 
     transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1) !important;
-    /* Remove glass blur for these specific cards to look like solid tags */
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-}
-
-[data-theme="coquette"] .scard::after {
-    /* The hole in the tag */
-    content: '';
-    position: absolute;
-    top: 10px;
-    left: 50%;
-    width: 12px;
-    height: 12px;
-    background: #ffffff;
-    border: 2px solid var(--border);
-    border-radius: 50%;
-    transform: translateX(-50%);
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
 }
 
 [data-theme="coquette"] .scard:nth-child(1) { 
     background-color: rgba(255, 194, 186, 0.4); /* Peach Tint */
     background-image: radial-gradient(circle at 8px 8px, rgba(220,174,150,0.5) 1.5px, transparent 0), radial-gradient(circle at 20px 20px, rgba(220,174,150,0.5) 1px, transparent 0);
     background-size: 24px 24px;
-    animation-delay: -0.5s;
     border-color: #e59d90;
 }
 [data-theme="coquette"] .scard:nth-child(1) .sv { color: #d16b5a; }
-[data-theme="coquette"] .scard:nth-child(1)::after { border-color: #e59d90; }
 
 [data-theme="coquette"] .scard:nth-child(2) { 
     background-color: rgba(173, 86, 196, 0.15); /* Purple Tint */
     background-image: repeating-linear-gradient(180deg, rgba(173, 86, 196, 0.1), rgba(173, 86, 196, 0.1) 8px, transparent 8px, transparent 18px);
-    animation-delay: -2s;
     border-color: #AD56C4;
 }
 [data-theme="coquette"] .scard:nth-child(2) .sv { color: #AD56C4; }
-[data-theme="coquette"] .scard:nth-child(2)::after { border-color: #AD56C4; }
 
 [data-theme="coquette"] .scard:nth-child(3) { 
     background-color: rgba(255, 156, 233, 0.25); /* Light Pink Tint */
     background-image: radial-gradient(circle at 4px 4px, rgba(255,141,161,0.2) 1.5px, transparent 0), radial-gradient(circle at 12px 12px, rgba(255,141,161,0.1) 1.5px, transparent 0);
     background-size: 16px 16px;
-    animation-delay: -3.5s;
     border-color: #FF9CE9;
 }
 [data-theme="coquette"] .scard:nth-child(3) .sv { color: #d659be; }
-[data-theme="coquette"] .scard:nth-child(3)::after { border-color: #FF9CE9; }
 
 [data-theme="coquette"] .scard:nth-child(4) { 
     background-color: rgba(220, 174, 150, 0.25); /* Gold/Sand Tint */
     background-image: repeating-linear-gradient(-45deg, rgba(220, 174, 150, 0.2), rgba(220, 174, 150, 0.2) 2px, transparent 2px, transparent 8px);
-    animation-delay: -5s;
     border-color: #DCAE96;
 }
 [data-theme="coquette"] .scard:nth-child(4) .sv { color: #c48964; }
-[data-theme="coquette"] .scard:nth-child(4)::after { border-color: #DCAE96; }
-
-/* The physically tied string reaching up to the rod */
-[data-theme="coquette"] .scard::before {
-    content: '';
-    position: absolute;
-    top: -40px; /* Bridge exactly the 40px gap to the rod */
-    left: 50%;
-    width: 2px;
-    height: 50px; /* Enters the tag hole slightly */
-    background: #c48964; /* Gold/brown twine */
-    transform: translateX(-50%);
-    box-shadow: inset 1px 0 2px rgba(0,0,0,0.2);
-    z-index: -1;
-}
-
-@keyframes sway {
-    0%, 100% { transform: rotate(-1.5deg); }
-    50% { transform: rotate(1.5deg); }
-}
 
 [data-theme="coquette"] .scard .si { 
     font-size: 0; background: none !important; border-bottom: 1px dashed var(--border); margin-bottom: 8px; padding-bottom: 4px; border-radius: 0; display: flex; align-items: center; justify-content: center;
@@ -364,15 +300,10 @@ body { font-family: 'Inter', sans-serif; background: var(--bg-0); color: var(--t
 
 /* Theme Switcher */
 .theme-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 16px; transition: all 0.4s; }
-.theme-box h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-d); margin-bottom: 12px; font-weight: 600; }
-.theme-row { display: flex; gap: 8px; justify-content: center; }
-.theme-btn { width: 36px; height: 36px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all 0.3s; position: relative; }
-.theme-btn:hover { transform: scale(1.1); }
-.theme-btn.active { border-color: var(--accent); box-shadow: 0 0 12px rgba(var(--accent-rgb),0.4); }
-.theme-btn.t-dark { background: linear-gradient(135deg, #1a1a3e, #0a0a1a); }
-.theme-btn.t-light { background: linear-gradient(135deg, #ffffff, #e2e8f0); }
-.theme-btn.t-pink { background: linear-gradient(135deg, #ec4899, #f43f5e); }
-.theme-btn.t-coquette { background: linear-gradient(135deg, #fffdd0, #dcae96); border: 1px solid rgba(178,172,136,0.3); }
+.modern-theme-switch { width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-1); color: var(--text); display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: 'Inter', sans-serif; transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1); box-shadow: inset 0 2px 4px rgba(0,0,0,0.05), var(--shadow); }
+.modern-theme-switch:hover { transform: translateY(-2px); border-color: var(--border-h); box-shadow: 0 4px 15px rgba(255,255,255,0.05), inset 0 1px 0 rgba(255,255,255,0.08); }
+.modern-theme-switch.girly-mode:hover { border-color: var(--accent); box-shadow: 0 4px 15px rgba(var(--accent-rgb),0.2); }
+.sw-icon { font-size: 16px; }
 
 /* Worker Toggle */
 .wbox { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 16px; transition: all 0.4s; }
@@ -561,4 +492,40 @@ body { font-family: 'Inter', sans-serif; background: var(--bg-0); color: var(--t
 [data-theme="coquette"] .wcard:hover { 
     transform: translateY(-4px) scale(1.02);
     box-shadow: 0 10px 25px rgba(173,86,196,0.15);
+}
+
+/* ========== AESTHETIC DARK THEME ENHANCEMENTS ========== */
+[data-theme="black"] .card, [data-theme="black"] .scard, [data-theme="black"] .wdcard, [data-theme="black"] .conn-card, [data-theme="black"] .sysbox, [data-theme="black"] .wbox, [data-theme="black"] .theme-box {
+    background: rgba(30, 41, 59, 0.65);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    border-radius: 16px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 10px 35px rgba(0,0,0,0.35);
+    transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+[data-theme="black"] .card:hover, [data-theme="black"] .wdcard:hover, [data-theme="black"] .scard:hover {
+    border-color: rgba(56, 189, 248, 0.35);
+    background: rgba(51, 65, 85, 0.75);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 25px rgba(56, 189, 248, 0.1), 0 15px 45px rgba(0,0,0,0.5);
+    transform: translateY(-4px);
+}
+
+[data-theme="black"] .scard {
+    background-image: none !important;
+}
+[data-theme="black"] .scard::before, [data-theme="black"] .scard::after {
+    display: none !important;
+}
+[data-theme="black"] .side {
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(30px);
+    -webkit-backdrop-filter: blur(30px);
+    border-right: 1px solid rgba(148, 163, 184, 0.15);
+}
+[data-theme="black"] .tbar {
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
 }

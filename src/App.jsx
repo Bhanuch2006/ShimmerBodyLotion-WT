@@ -11,6 +11,7 @@ import Jobs from './pages/Jobs';
 import ConnectDevice from './pages/ConnectDevice';
 import Sidebar from './components/Sidebar';
 import GlitterTrail from './components/GlitterTrail';
+import NetworkCanvas from './components/NetworkCanvas';
 
 // Window Controls Component (Electron)
 const WindowControls = () => {
@@ -96,6 +97,7 @@ function App() {
     return (
         <ErrorBoundary>
             <GlitterTrail theme={theme} />
+            <NetworkCanvas theme={theme} />
             <SocketProvider>
                 <Router>
                     <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>

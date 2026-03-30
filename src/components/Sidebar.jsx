@@ -41,31 +41,31 @@ const Sidebar = () => {
     return (
         <aside className="side">
             <div className="logo-wrap">
-                <div className="logo-icon">
-                    <span className="default-logo">🎀</span>
+                <div className="logo-icon" style={{ background: theme === 'coquette' ? '' : 'transparent', border: theme === 'coquette' ? '' : '1px solid rgba(255,255,255,0.1)' }}>
+                    <span className="default-logo">{theme === 'coquette' ? '🎀' : '⌘'}</span>
                     <img src="/assets/dino.png" alt="Dino" className="dino-logo" style={{ display: theme === 'pink' ? 'block' : 'none' }} />
                 </div>
                 <div className="dino-ground"></div>
-                <h2>Cloud Archive</h2>
-                <p>Lace & Ribbon Network</p>
+                <h2>{theme === 'coquette' ? 'Cloud Archive' : 'Compute Core'}</h2>
+                <p>{theme === 'coquette' ? 'Lace & Ribbon Network' : 'Distributed Processing'}</p>
             </div>
 
             <nav className="nav">
-                <NavLink to="/" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>🎀</span>The Archive</NavLink>
-                <NavLink to="/submit" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>💌</span>Exchange Letters</NavLink>
-                <NavLink to="/workers" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>🦢</span>Companions</NavLink>
-                <NavLink to="/jobs" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>📜</span>The Ledger</NavLink>
-                <NavLink to="/connect" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>🗝️</span>Extend Horizon</NavLink>
+                <NavLink to="/" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🎀' : '⚡'}</span>Dashboard</NavLink>
+                <NavLink to="/submit" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '💌' : '🚀'}</span>Submit Tasks</NavLink>
+                <NavLink to="/workers" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🦢' : '💻'}</span>Connected Devices</NavLink>
+                <NavLink to="/jobs" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '📜' : '📊'}</span>Submitted Jobs</NavLink>
+                <NavLink to="/connect" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🗝️' : '📖'}</span>How to</NavLink>
             </nav>
 
             <div className="theme-box">
-                <h3>Theme</h3>
-                <div className="theme-row">
-                    <button className={`theme-btn t-dark ${theme === 'dark' ? 'active' : ''}`} title="Dark" onClick={() => handleThemeChange('dark')}></button>
-                    <button className={`theme-btn t-light ${theme === 'light' ? 'active' : ''}`} title="Light" onClick={() => handleThemeChange('light')}></button>
-                    <button className={`theme-btn t-pink ${theme === 'pink' ? 'active' : ''}`} title="Pink" onClick={() => handleThemeChange('pink')}></button>
-                    <button className={`theme-btn t-coquette ${theme === 'coquette' ? 'active' : ''}`} title="Coquette" onClick={() => handleThemeChange('coquette')}></button>
-                </div>
+                <button 
+                    className={`modern-theme-switch ${theme === 'black' ? 'black-mode' : 'girly-mode'}`}
+                    onClick={() => handleThemeChange(theme === 'coquette' ? 'black' : 'coquette')}
+                >
+                    <span className="sw-icon">{theme === 'coquette' ? '🎀' : '🌙'}</span>
+                    <span className="sw-text">{theme === 'coquette' ? 'Girly Pop' : 'Black Mode'}</span>
+                </button>
             </div>
 
             <div className="wbox" id="wbox">
