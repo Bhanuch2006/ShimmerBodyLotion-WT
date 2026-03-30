@@ -204,18 +204,55 @@ async function executeJob(jobId, files, serverUrl) {
                 console.log(`   ✅ Downloaded: ${fileName}`);
             } catch (downloadErr) {
                 console.error(`   ❌ Download failed: ${downloadErr.message}`);
-                throw downloadErr;
+                throw new Error(`Failed to download file ${fileName}: ${downloadErr.message}`);
             }
 
             downloadedFiles.push(fileName);
         }
 
-        if (!mainFile) throw new Error('No Python script found in uploaded files');
+        if (!mainFile) {
+            throw new Error('No Python script (.py file) found in uploaded files. Please upload a Python script.');
+        }
+
+        // Verify main file exists before execution
+        const mainFilePath = path.join(jobsPath, mainFile);
+        if (!fs.existsSync(mainFilePath)) {
+            throw new Error(`Main Python file not found at: ${mainFilePath}`);
+        }
+
+        console.log(`✅ All files downloaded successfully to: ${jobsPath}`);
 
         console.log('🧠 Executing:', mainFile);
+        console.log(`   Working directory: ${jobsPath}`);
+        console.log(`   Downloaded files: ${JSON.stringify(downloadedFiles)}`);
 
         const useDocker = capabilities.dockerAvailable && isDockerRunning();
         let command;
+        let pythonCmd = 'python';  // Default to 'python'
+        
+        // Detect Python command available on this system
+        try {
+            // Try 'python3' first (Linux/Mac preference)
+            execSync('python3 --version', { stdio: 'pipe', timeout: 5000 });
+            pythonCmd = 'python3';
+            console.log('✅ Using: python3');
+        } catch {
+            try {
+                // Fallback to 'python' (Windows/universal)
+                execSync('python --version', { stdio: 'pipe', timeout: 5000 });
+                pythonCmd = 'python';
+                console.log('✅ Using: python');
+            } catch {
+                try {
+                    // Last resort: 'py' launcher (Windows)
+                    execSync('py --version', { stdio: 'pipe', timeout: 5000 });
+                    pythonCmd = 'py';
+                    console.log('✅ Using: py');
+                } catch {
+                    throw new Error('Python not found in PATH. Install Python and ensure it\'s in PATH.');
+                }
+            }
+        }
 
         if (useDocker) {
             const dockerJobsPath = jobsPath.replace(/\\/g, '/');
@@ -224,8 +261,9 @@ async function executeJob(jobId, files, serverUrl) {
                 `sh -c "pip install numpy pandas scikit-learn --quiet 2>/dev/null && python main.py"`;
             console.log('🐳 Running in Docker');
         } else {
-            command = `py "${path.join(jobsPath, mainFile)}"`;
-            console.log('⚙️ Running locally');
+            // Use relative path and detected Python command
+            command = `${pythonCmd} "${mainFile}"`;
+            console.log(`⚙️ Running locally with: ${pythonCmd} "${mainFile}"`);
         }
 
         exec(command, { timeout: 120000, cwd: jobsPath }, async (err, stdout, stderr) => {
@@ -237,10 +275,26 @@ async function executeJob(jobId, files, serverUrl) {
             } catch {}
 
             if (err) {
-                console.error('❌ Execution error:', err.message);
+                const errorMsg = stderr || err.message;
+                console.error('❌ Execution error:', errorMsg);
+                
+                // Check for common issues
+                if (err.code === 'ENOENT' || errorMsg.includes('cannot find')) {
+                    const diagnosis = [
+                        'Possible causes:',
+                        '1. Python not installed or not in PATH',
+                        '2. Python script has syntax errors',
+                        '3. Missing required dependencies (numpy, pandas, scikit-learn, etc.)',
+                        `4. Working directory: ${jobsPath}`,
+                        `5. Command that failed: ${command}`
+                    ].join('\n');
+                    console.error(diagnosis);
+                }
+                
                 await axios.post(`${SERVER}/job-update`, {
                     jobId, status: 'failed',
-                    error: stderr || err.message, workerUrl
+                    error: `${errorMsg}\n\nWorker tip: Ensure Python is installed and in PATH on ${os.hostname()}`, 
+                    workerUrl
                 }).catch(() => {});
             } else {
                 console.log('✅ Job done:', jobId);
@@ -258,10 +312,12 @@ async function executeJob(jobId, files, serverUrl) {
         });
 
     } catch (err) {
-        console.error('🔥 Error:', err.message);
+        console.error('🔥 Error during job setup:', err.message);
+        console.error('   Stack:', err.stack);
         await axios.post(`${SERVER}/job-update`, {
             jobId, status: 'failed',
-            error: err.message, workerUrl
+            error: `Job setup failed: ${err.message}`, 
+            workerUrl
         }).catch(() => {});
 
         isExecuting = false;
