@@ -8,7 +8,7 @@ const JobOfferModal = () => {
     useEffect(() => {
         if (!window.electronAPI) return;
 
-        window.electronAPI.onWorkerMessage((msg) => {
+        const dispose = window.electronAPI.onWorkerMessage((msg) => {
             if (msg.type === 'JOB_OFFER') {
                 setOffer(msg.data);
                 const nextDeadline = Date.now() + 60000;
@@ -16,6 +16,12 @@ const JobOfferModal = () => {
                 setTimeLeft(60);
             }
         });
+
+        return () => {
+            if (typeof dispose === 'function') {
+                dispose();
+            }
+        };
     }, []);
 
     useEffect(() => {

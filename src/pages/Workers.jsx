@@ -5,15 +5,16 @@ import { useTheme } from '../hooks/useTheme';
 const Workers = () => {
     const { workers } = useSocket();
     const theme = useTheme();
+    const availableWorkers = workers.filter(w => w.status !== 'offline');
 
     return (
         <section className="sec on" id="sec-workers">
             <h1 className="stitle"><span className="t-ico" data-type="devices"></span> Connected Devices</h1>
             <div className="wdgrid" id="wDetail">
-                {workers.length === 0 ? (
+                {availableWorkers.length === 0 ? (
                     <p className="empty">No connected devices registered</p>
                 ) : (
-                    workers.map((w, idx) => {
+                    availableWorkers.map((w, idx) => {
                         const c = w.capabilities || {};
                         return (
                             <div className="wdcard" key={idx}>

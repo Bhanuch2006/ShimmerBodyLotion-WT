@@ -392,6 +392,7 @@ app.post('/poll-job', (req, res) => {
         jobQueue.splice(i, 1);
         job.status = 'assigned';
         job.assignedWorker = workerUrl;
+        job.assignedAt = Date.now();
         worker.currentJob = jobId;
         worker.lastAssignedAt = Date.now();
         
@@ -527,6 +528,7 @@ function processQueue() {
 setInterval(() => {
     const now = Date.now();
     let changed = false;
+    const ASSIGNED_TIMEOUT_MS = 120000;
 
     for (const [url, worker] of workers) {
         if (now - worker.lastHeartbeat > 30000 && worker.status === 'online') {
@@ -544,6 +546,28 @@ setInterval(() => {
                     console.log('♻️ Re-queued job:', job.id, '(retry #' + job.retries + ')');
                 }
                 worker.currentJob = null;
+            }
+        }
+
+        // Recover jobs that were assigned but never started (stuck offer/worker state).
+        if (worker.currentJob) {
+            const assignedJob = jobs.get(worker.currentJob);
+            if (
+                assignedJob &&
+                assignedJob.status === 'assigned' &&
+                !assignedJob.startedAt &&
+                (now - (assignedJob.assignedAt || assignedJob.submittedAt || now)) > ASSIGNED_TIMEOUT_MS
+            ) {
+                console.log('⏱️ Re-queuing stale assigned job:', assignedJob.id);
+                assignedJob.status = 'queued';
+                assignedJob.assignedWorker = null;
+                assignedJob.assignedAt = null;
+                assignedJob.retries = (assignedJob.retries || 0) + 1;
+                if (!jobQueue.includes(assignedJob.id)) {
+                    jobQueue.unshift(assignedJob.id);
+                }
+                worker.currentJob = null;
+                changed = true;
             }
         }
     }

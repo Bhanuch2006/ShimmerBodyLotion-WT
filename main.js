@@ -8,6 +8,27 @@ let tray;
 let serverProcess;
 let workerProcess;
 const locallySubmittedJobIds = new Set();
+let workerMessageListenerReady = false;
+const pendingWorkerMessages = [];
+
+function sendWorkerMessageToRenderer(msg) {
+    if (!mainWindow) return;
+    if (workerMessageListenerReady) {
+        mainWindow.webContents.send('worker-message', msg);
+        return;
+    }
+
+    if (msg?.type === 'JOB_OFFER') {
+        pendingWorkerMessages.push(msg);
+    }
+}
+
+function flushPendingWorkerMessages() {
+    if (!mainWindow || !workerMessageListenerReady) return;
+    while (pendingWorkerMessages.length > 0) {
+        mainWindow.webContents.send('worker-message', pendingWorkerMessages.shift());
+    }
+}
 
 // Set custom user data path to avoid cache access issues in shared environments
 const userDataPath = path.join(__dirname, '.electron_data');
@@ -61,6 +82,10 @@ function createWindow() {
     } else {
         mainWindow.loadURL(url);
     }
+
+    mainWindow.webContents.on('did-start-loading', () => {
+        workerMessageListenerReady = false;
+    });
 
     mainWindow.on('close', (e) => {
         if (tray) {
@@ -130,7 +155,7 @@ ipcMain.handle('toggle-worker', (event, start, serverUrl) => {
         workerProcess.stderr.on('data', d => process.stderr.write(`[Worker ERR] ${d}`));
         
         workerProcess.on('message', (msg) => {
-            if (mainWindow) mainWindow.webContents.send('worker-message', msg);
+            sendWorkerMessageToRenderer(msg);
         });
 
         // Ensure worker knows which jobs were submitted from this local app.
@@ -184,6 +209,11 @@ ipcMain.handle('mark-submitted-job', (event, jobId) => {
     }
 
     return { status: 'recorded' };
+});
+
+ipcMain.on('worker-message-listener-ready', () => {
+    workerMessageListenerReady = true;
+    flushPendingWorkerMessages();
 });
 
 // ==================== APP LIFECYCLE ====================

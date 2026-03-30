@@ -9,6 +9,7 @@ const Dashboard = () => {
     const [localWorkerRunning, setLocalWorkerRunning] = useState(false);
     const [workerLog, setWorkerLog] = useState('Local node is currently idle.');
 
+    const availableWorkers = workers.filter(w => w.status !== 'offline');
     const activeWorkersCount = workers.filter(w => w.status === 'online').length;
     const recentJobs = jobs.slice(0, 6);
 
@@ -78,10 +79,10 @@ const Dashboard = () => {
                 <div className="card">
                     <div className="ctitle"><span className="t-ico" data-type="devices"></span> Connected Devices</div>
                     <div id="dW">
-                        {workers.length === 0 ? (
+                        {availableWorkers.length === 0 ? (
                             <p className="empty">No connected devices</p>
                         ) : (
-                            workers.map((w, idx) => (
+                            availableWorkers.map((w, idx) => (
                                 <div className="wcard" key={idx}>
                                     <div className="wh">
                                         <span className="wn">

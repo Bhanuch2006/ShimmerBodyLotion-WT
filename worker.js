@@ -14,6 +14,7 @@ const PORT = parseInt(process.env.WORKER_PORT) || 4000;
 const SERVER_URL = process.env.SERVER_URL || 'https://shimmerbodylotion-wt.onrender.com';
 const NGROK_AUTHTOKEN = process.env.NGROK_AUTHTOKEN || null;
 const WORKER_CLIENT_ID = process.env.WORKER_CLIENT_ID || `host:${os.hostname()}`;
+const CONTAINER_OUTPUT_DIR = '/workspace/output';
 
 let workerUrl = process.env.WORKER_URL || null;
 
@@ -298,11 +299,11 @@ async function runJobInDocker(jobsPath, mainFile, outputDir) {
     const command = [
         'docker run --rm',
         `-v "${jobsPath}:/workspace"`,
-        `-v "${outputDir}:/workspace/output"`,
+        `-v "${outputDir}:${CONTAINER_OUTPUT_DIR}"`,
         '-w /workspace',
-        '-e OUTPUT_DIR=/workspace/output',
+        `-e OUTPUT_DIR=${CONTAINER_OUTPUT_DIR}`,
         'python:3.10-slim',
-        `sh -c "python /workspace/${mainFile}"`
+        `sh -c "mkdir -p ${CONTAINER_OUTPUT_DIR} && python /workspace/${mainFile}"`
     ].join(' ');
 
     return runCommand(command, { cwd: jobsPath, timeout: 300000 });
@@ -384,6 +385,8 @@ async function handleJob(job) {
         if (!fs.existsSync(jobsPath)) fs.mkdirSync(jobsPath);
         const outputDir = path.join(jobsPath, 'output', jobId);
         ensureCleanDir(outputDir);
+        // Contract: user scripts should write artifacts to OUTPUT_DIR (/workspace/output in Docker).
+        fs.mkdirSync(outputDir, { recursive: true });
 
         let mainFile = '';
         const downloadedFiles = [];
@@ -446,6 +449,8 @@ async function handleJob(job) {
             const executionLog = [
                 `jobId: ${jobId}`,
                 `runner: ${command}`,
+                `outputDir: ${outputDir}`,
+                `containerOutputDir: ${CONTAINER_OUTPUT_DIR}`,
                 '',
                 '=== STDOUT ===',
                 stdout,
@@ -458,11 +463,23 @@ async function handleJob(job) {
             const outputFiles = listFilesRecursive(outputDir);
             const modelExts = new Set(['.pt', '.pth', '.pkl', '.h5', '.joblib', '.onnx']);
             const modelFiles = outputFiles.filter((f) => modelExts.has(path.extname(f).toLowerCase()));
-            const outputWarning = modelFiles.length === 0 ? 'No model file generated' : null;
+            let outputWarning = modelFiles.length === 0 ? 'No model file generated' : null;
 
             const zipPath = path.join(jobsPath, `${jobId}-output.zip`);
             await createZipFromDirectory(outputDir, zipPath);
-            const uploadRes = await uploadOutputZip(SERVER, jobId, zipPath);
+            let outputFileUrl = null;
+
+            try {
+                const uploadRes = await uploadOutputZip(SERVER, jobId, zipPath);
+                outputFileUrl = uploadRes.output_file_url || null;
+            } catch (uploadErr) {
+                const msg = String(uploadErr.message || uploadErr);
+                const uploadWarning = msg.includes('404')
+                    ? 'Output upload unavailable on server (missing /upload-output endpoint)'
+                    : `Output upload failed: ${msg}`;
+                outputWarning = outputWarning ? `${outputWarning}; ${uploadWarning}` : uploadWarning;
+                console.warn(`⚠️ ${uploadWarning}`);
+            }
 
             console.log(`✅ Job done (using: ${command})`);
 
@@ -470,7 +487,7 @@ async function handleJob(job) {
                 jobId,
                 status: 'completed',
                 result: stdout,
-                output_file_url: uploadRes.output_file_url,
+                output_file_url: outputFileUrl,
                 output_warning: outputWarning,
                 output_files: outputFiles,
                 workerUrl
@@ -519,16 +536,30 @@ app.listen(PORT, async () => {
     console.log(`🚀 Worker running on port ${PORT}`);
 
     if (NGROK_AUTHTOKEN) {
-        const ngrok = require('@ngrok/ngrok');
-        const listener = await ngrok.forward({
-            addr: PORT,
-            authtoken: NGROK_AUTHTOKEN
-        });
+        try {
+            const ngrok = require('@ngrok/ngrok');
+            const listener = await ngrok.forward({
+                addr: PORT,
+                authtoken: NGROK_AUTHTOKEN
+            });
 
-        workerUrl = listener.url();
-        console.log('🌍 Public URL:', workerUrl);
+            workerUrl = listener.url();
+            console.log('🌍 Public URL:', workerUrl);
+            sendStatus(`Worker online at ${workerUrl}`);
+        } catch (err) {
+            const errMsg = err?.message || String(err);
+            if (String(errMsg).includes('ERR_NGROK_334')) {
+                console.warn('⚠️ ngrok endpoint already online. Continuing without ngrok tunnel for this worker instance.');
+            } else {
+                console.warn(`⚠️ ngrok startup failed: ${errMsg}`);
+            }
+
+            workerUrl = process.env.WORKER_URL || `http://localhost:${PORT}`;
+            sendStatus('ngrok unavailable; running in poll mode with local worker identity');
+        }
     } else {
         workerUrl = `http://localhost:${PORT}`;
+        sendStatus('Worker online (local mode)');
     }
 
     registerWorker();

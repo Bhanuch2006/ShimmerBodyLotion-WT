@@ -13,7 +13,9 @@ const Jobs = () => {
     };
 
     const getDownloadUrl = (job) => {
+        if (!job) return null;
         if (job.output_file_url) return job.output_file_url;
+        if (!job.id || !currentUrl) return null;
         return `${currentUrl}/tasks/${job.id}/download`;
     };
 
@@ -36,6 +38,7 @@ const Jobs = () => {
                                         <button className="vbtn" onClick={() => setSelectedJob(j)}>View</button>
                                     ) : null}
                                     {j.status === 'completed' ? (
+                                        getDownloadUrl(j) ? (
                                         <a
                                             className="vbtn"
                                             href={getDownloadUrl(j)}
@@ -45,6 +48,7 @@ const Jobs = () => {
                                         >
                                             Download output.zip
                                         </a>
+                                        ) : null
                                     ) : null}
                                 </div>
                             </div>
@@ -63,15 +67,22 @@ const Jobs = () => {
                         {selectedJob.status === 'completed' && (
                             <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                 <strong style={{ color: 'var(--ok)' }}>Task Completed</strong>
-                                <a
-                                    className="vbtn"
-                                    href={getDownloadUrl(selectedJob)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    style={{ textDecoration: 'none' }}
-                                >
-                                    Download output.zip
-                                </a>
+                                <span style={{ fontSize: '12px', color: 'var(--text-m)' }}>Download Results:</span>
+                                {getDownloadUrl(selectedJob) ? (
+                                    <a
+                                        className="vbtn"
+                                        href={getDownloadUrl(selectedJob)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{ textDecoration: 'none' }}
+                                    >
+                                        Download output.zip
+                                    </a>
+                                ) : (
+                                    <span style={{ fontSize: '12px', color: 'var(--text-m)' }}>
+                                        Output artifact unavailable on current server
+                                    </span>
+                                )}
                             </div>
                         )}
                         {selectedJob.output_warning && (

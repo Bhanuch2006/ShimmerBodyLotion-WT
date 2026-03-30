@@ -75,12 +75,14 @@ Then open `http://localhost:3000` in a browser.
 | POST | `/register` | Register a worker |
 | POST | `/heartbeat` | Worker heartbeat |
 | POST | `/upload` | Upload files |
+| POST | `/upload-output` | Upload task output.zip artifact |
 | POST | `/submit-job` | Submit a job |
 | POST | `/job-update` | Worker reports job status |
 | GET | `/api/workers` | List workers |
 | GET | `/api/jobs` | List jobs |
 | GET | `/api/stats` | Dashboard stats |
 | GET | `/api/status/:id` | Job status |
+| GET | `/tasks/:id/download` | Download output.zip for a completed task |
 
 ## Tech Stack
 
