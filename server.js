@@ -17,7 +17,7 @@ try {
     cloudinary = require('cloudinary').v2;
 
     // Support either explicit credentials or CLOUDINARY_URL in env.
-    let cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    let cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOOUD_NAME;
     let apiKey = process.env.CLOUDINARY_API_KEY;
     let apiSecret = process.env.CLOUDINARY_API_SECRET;
 
