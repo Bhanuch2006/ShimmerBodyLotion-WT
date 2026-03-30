@@ -1,0 +1,24 @@
+{
+  "name": "sharingiscaring",
+  "version": "2.0.0",
+  "description": "Decentralized Idle Compute Sharing Platform for AI & Research Workloads",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "server": "node server.js",
+    "worker": "node worker.js"
+  },
+  "keywords": ["distributed-computing", "gpu-sharing", "ai-training"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "axios": "^1.14.0",
+    "express": "^5.2.1",
+    "multer": "^2.1.1",
+    "socket.io": "^4.8.0"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0"
+  }
+}
