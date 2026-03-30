@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useSocket } from '../context/SocketContext';
 import { useTheme } from '../hooks/useTheme';
 
 const SubmitJob = () => {
+    const { currentUrl } = useSocket();
     const theme = useTheme();
     const [files, setFiles] = useState([]);
     const [description, setDescription] = useState('');
@@ -97,11 +99,11 @@ const SubmitJob = () => {
             const fd = new FormData();
             files.forEach(f => fd.append('files', f));
 
-            // Assume express server proxies /upload
-            const uploadRes = await axios.post('http://localhost:3000/upload', fd);
+            // Use the dynamic currentUrl from context
+            const uploadRes = await axios.post(`${currentUrl}/upload`, fd);
 
             // Send new task object structure to the global queue
-            await axios.post('http://localhost:3000/submit-job', {
+            await axios.post(`${currentUrl}/submit-job`, {
                 description: description.trim(),
                 files: uploadRes.data.files,
                 resources_required: { ...resources }

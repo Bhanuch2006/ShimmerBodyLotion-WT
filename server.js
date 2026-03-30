@@ -8,11 +8,13 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
+const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
+app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'dist')));
 
