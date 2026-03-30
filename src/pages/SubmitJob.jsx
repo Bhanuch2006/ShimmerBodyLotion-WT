@@ -234,8 +234,9 @@ const SubmitJob = () => {
                         </button>
                     </div>
                 </div>
+            </div>
 
-                {/* Mock Contributor Acceptance Modal */}
+            {/* Mock Contributor Acceptance Modal */}
                 {showModal && (
                     <div className="modal-bg">
                         <div className="modal" style={{ maxWidth: '500px', padding: '30px' }}>
