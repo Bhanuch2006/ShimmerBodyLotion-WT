@@ -71,11 +71,24 @@ app.use(express.static(path.join(__dirname, 'dist')));
 
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+const outputsDir = path.join(__dirname, 'outputs');
+if (!fs.existsSync(outputsDir)) fs.mkdirSync(outputsDir);
+app.use('/outputs', express.static(outputsDir));
 
 // ==================== DATA STORES ====================
 const workers = new Map();
 const jobs = new Map();
 const jobQueue = [];
+
+function normalizeClientId(value) {
+    if (!value || typeof value !== 'string') return null;
+    return value.trim().toLowerCase();
+}
+
+function normalizeHost(value) {
+    if (!value || typeof value !== 'string') return null;
+    return value.trim().toLowerCase();
+}
 
 // ==================== FILE UPLOAD ====================
 const localDiskStorage = multer.diskStorage({
@@ -86,6 +99,16 @@ const localDiskStorage = multer.diskStorage({
 const upload = cloudinary
     ? multer({ storage: multer.memoryStorage() })
     : multer({ storage: localDiskStorage });
+
+const outputStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, outputsDir),
+    filename: (req, file, cb) => {
+        const taskId = req.body.task_id || 'task';
+        const safeTaskId = String(taskId).replace(/[^a-zA-Z0-9_-]/g, '_');
+        cb(null, `${Date.now()}-${safeTaskId}-output.zip`);
+    }
+});
+const outputUpload = multer({ storage: outputStorage });
 
 function uploadBufferToCloudinary(file) {
     return new Promise((resolve, reject) => {
@@ -145,10 +168,47 @@ app.post('/upload', upload.array('files'), async (req, res) => {
     }
 });
 
+app.post('/upload-output', outputUpload.single('file'), (req, res) => {
+    try {
+        const taskId = req.body.task_id;
+        if (!taskId) {
+            return res.status(400).json({ error: 'task_id is required' });
+        }
+        if (!req.file) {
+            return res.status(400).json({ error: 'output zip file is required' });
+        }
+
+        const job = jobs.get(taskId);
+        if (!job) {
+            return res.status(404).json({ error: 'Task not found' });
+        }
+
+        const outputPath = req.file.path;
+        const outputUrl = `${getServerUrl()}/outputs/${path.basename(outputPath)}`;
+
+        job.output_file_path = outputPath;
+        job.output_file_url = outputUrl;
+        if (job.status !== 'completed') {
+            job.status = 'completed';
+        }
+
+        broadcastUpdate();
+        return res.json({
+            task_id: taskId,
+            output_file_url: outputUrl,
+            status: 'completed'
+        });
+    } catch (err) {
+        console.error('❌ Output upload error:', err.message);
+        return res.status(500).json({ error: 'Output upload failed' });
+    }
+});
+
 // ==================== WORKER REGISTRATION ====================
 app.post('/register', (req, res) => {
-    const { workerUrl, capabilities } = req.body;
+    const { workerUrl, capabilities, workerClientId } = req.body;
     const existing = workers.get(workerUrl);
+    const normalizedClientId = normalizeClientId(workerClientId) || existing?.clientId || null;
 
     workers.set(workerUrl, {
         url: workerUrl,
@@ -162,7 +222,8 @@ app.post('/register', (req, res) => {
         currentJob: existing ? existing.currentJob : null,
         registeredAt: existing ? existing.registeredAt : Date.now(),
         lastAssignedAt: existing ? existing.lastAssignedAt : 0,
-        jobHistory: existing ? existing.jobHistory : []
+        jobHistory: existing ? existing.jobHistory : [],
+        clientId: normalizedClientId
     });
 
     console.log(`✅ Worker registered (${workers.size} total):`, workerUrl);
@@ -196,12 +257,43 @@ app.post('/heartbeat', (req, res) => {
     res.json({ status: 'ok' });
 });
 
+app.post('/disconnect-worker', (req, res) => {
+    const { workerUrl } = req.body;
+    const worker = workers.get(workerUrl);
+    if (!worker) {
+        return res.json({ status: 'ok' });
+    }
+
+    worker.lastHeartbeat = Date.now();
+    worker.status = 'offline';
+
+    if (worker.currentJob) {
+        const job = jobs.get(worker.currentJob);
+        if (job && (job.status === 'assigned' || job.status === 'running')) {
+            job.status = 'queued';
+            job.assignedWorker = null;
+            job.retries = (job.retries || 0) + 1;
+            if (!jobQueue.includes(job.id)) {
+                jobQueue.unshift(job.id);
+            }
+        }
+        worker.currentJob = null;
+    }
+
+    broadcastUpdate();
+    processQueue();
+    return res.json({ status: 'ok' });
+});
+
 // ==================== JOB SUBMISSION ====================
 app.post('/submit-job', (req, res) => {
-    const { files, description, resources_required } = req.body;
+    const { files, description, resources_required, submitterClientId, submitterHostname } = req.body;
     if (!files || files.length === 0) {
         return res.status(400).json({ error: 'No files provided' });
     }
+
+    const normalizedSubmitterClientId = normalizeClientId(submitterClientId);
+    const normalizedSubmitterHostname = normalizeHost(submitterHostname);
 
     const jobId = crypto.randomUUID();
     const fileSignature = files.map(f => path.basename(f)).sort().join('|');
@@ -213,7 +305,10 @@ app.post('/submit-job', (req, res) => {
         startedAt: null, completedAt: null,
         result: null, error: null, retries: 0,
         fileSignature,
-        targetWorker: null
+        targetWorker: null,
+        submitterClientId: normalizedSubmitterClientId,
+        submitterHostname: normalizedSubmitterHostname,
+        excludedWorkers: []
     };
 
     jobs.set(jobId, job);
@@ -263,6 +358,21 @@ app.post('/poll-job', (req, res) => {
         if (job.targetWorker && job.targetWorker !== workerUrl) {
             continue;
         }
+
+        if (Array.isArray(job.excludedWorkers) && job.excludedWorkers.includes(workerUrl)) {
+            continue;
+        }
+
+        // Never assign a job back to the same client that submitted it.
+        if (job.submitterClientId && worker.clientId && job.submitterClientId === worker.clientId) {
+            continue;
+        }
+
+        // Fallback safety: block self-assignment by hostname even if client IDs are missing.
+        const workerHost = normalizeHost(worker.capabilities?.hostname);
+        if (job.submitterHostname && workerHost && job.submitterHostname === workerHost) {
+            continue;
+        }
         
         // If job targets a specific worker that's offline, allow any worker
         if (job.targetWorker && job.targetWorker === workerUrl) {
@@ -282,6 +392,7 @@ app.post('/poll-job', (req, res) => {
         jobQueue.splice(i, 1);
         job.status = 'assigned';
         job.assignedWorker = workerUrl;
+        job.assignedAt = Date.now();
         worker.currentJob = jobId;
         worker.lastAssignedAt = Date.now();
         
@@ -301,6 +412,8 @@ app.post('/poll-job', (req, res) => {
             job: {
                 jobId: job.id,
                 files: job.files,
+                description: job.description,
+                resources_required: job.resources_required,
                 serverUrl
             }
         });
@@ -310,9 +423,41 @@ app.post('/poll-job', (req, res) => {
     res.json({ job: null });
 });
 
+app.post('/job-skip', (req, res) => {
+    const { jobId, workerUrl, reason } = req.body;
+    const job = jobs.get(jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (!Array.isArray(job.excludedWorkers)) {
+        job.excludedWorkers = [];
+    }
+    if (workerUrl && !job.excludedWorkers.includes(workerUrl)) {
+        job.excludedWorkers.push(workerUrl);
+    }
+
+    if (job.assignedWorker === workerUrl && (job.status === 'assigned' || job.status === 'running')) {
+        job.status = 'queued';
+        job.assignedWorker = null;
+        job.retries = (job.retries || 0) + 1;
+        if (!jobQueue.includes(job.id)) {
+            jobQueue.unshift(job.id);
+        }
+    }
+
+    const worker = workers.get(workerUrl);
+    if (worker && worker.currentJob === jobId) {
+        worker.currentJob = null;
+    }
+
+    console.log('↪️ Job skipped by worker:', jobId, workerUrl || 'unknown', reason || 'no reason');
+    broadcastUpdate();
+    processQueue();
+    res.json({ status: 'ok' });
+});
+
 // ==================== JOB STATUS UPDATE (from worker) ====================
 app.post('/job-update', (req, res) => {
-    const { jobId, status, result, error } = req.body;
+    const { jobId, status, result, error, output_file_url, output_warning, output_files } = req.body;
     const job = jobs.get(jobId);
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
@@ -323,6 +468,15 @@ app.post('/job-update', (req, res) => {
     } else if (status === 'completed') {
         job.completedAt = Date.now();
         job.result = result;
+        if (output_file_url) {
+            job.output_file_url = output_file_url;
+        }
+        if (output_warning) {
+            job.output_warning = output_warning;
+        }
+        if (Array.isArray(output_files)) {
+            job.output_files = output_files;
+        }
         const worker = workers.get(job.assignedWorker);
         if (worker) {
             worker.jobsCompleted++;
@@ -374,6 +528,7 @@ function processQueue() {
 setInterval(() => {
     const now = Date.now();
     let changed = false;
+    const ASSIGNED_TIMEOUT_MS = 120000;
 
     for (const [url, worker] of workers) {
         if (now - worker.lastHeartbeat > 30000 && worker.status === 'online') {
@@ -391,6 +546,28 @@ setInterval(() => {
                     console.log('♻️ Re-queued job:', job.id, '(retry #' + job.retries + ')');
                 }
                 worker.currentJob = null;
+            }
+        }
+
+        // Recover jobs that were assigned but never started (stuck offer/worker state).
+        if (worker.currentJob) {
+            const assignedJob = jobs.get(worker.currentJob);
+            if (
+                assignedJob &&
+                assignedJob.status === 'assigned' &&
+                !assignedJob.startedAt &&
+                (now - (assignedJob.assignedAt || assignedJob.submittedAt || now)) > ASSIGNED_TIMEOUT_MS
+            ) {
+                console.log('⏱️ Re-queuing stale assigned job:', assignedJob.id);
+                assignedJob.status = 'queued';
+                assignedJob.assignedWorker = null;
+                assignedJob.assignedAt = null;
+                assignedJob.retries = (assignedJob.retries || 0) + 1;
+                if (!jobQueue.includes(assignedJob.id)) {
+                    jobQueue.unshift(assignedJob.id);
+                }
+                worker.currentJob = null;
+                changed = true;
             }
         }
     }
@@ -438,6 +615,23 @@ app.get('/api/status/:jobId', (req, res) => {
     const job = jobs.get(req.params.jobId);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     res.json(job);
+});
+
+app.get('/tasks/:id/download', (req, res) => {
+    const job = jobs.get(req.params.id);
+    if (!job) {
+        return res.status(404).json({ error: 'Task not found' });
+    }
+
+    if (job.output_file_path && fs.existsSync(job.output_file_path)) {
+        return res.download(job.output_file_path, `${job.id}-output.zip`);
+    }
+
+    if (job.output_file_url) {
+        return res.redirect(job.output_file_url);
+    }
+
+    return res.status(404).json({ error: 'No output artifact available for this task' });
 });
 
 app.get('/api/network-info', (req, res) => {
