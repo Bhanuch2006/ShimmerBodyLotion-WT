@@ -85,12 +85,53 @@ function isDockerRunning() {
 // ==================== JOB EXECUTION ====================
 app.get('/', (req, res) => res.json({ status: 'worker running', port: PORT, capabilities }));
 
-app.post('/execute', async (req, res) => {
-    const { jobId, files, serverUrl } = req.body;
-    res.json({ status: 'accepted', jobId });
+let activeJobOffer = null;
+
+app.post('/offer', async (req, res) => {
+    const { jobId, files, description, resources, serverUrl } = req.body;
+    res.json({ status: 'offered', jobId });
 
     const SERVER = serverUrl || SERVER_URL;
+    activeJobOffer = { jobId, files, serverUrl: SERVER, description, resources };
 
+    console.log('📬 Received job offer:', jobId);
+
+    if (process.send) {
+        process.send({ 
+            type: 'JOB_OFFER', 
+            data: activeJobOffer
+        });
+    } else {
+        console.log('⚠️ No IPC parent found, auto-accepting job (headless mode)');
+        executeJob(jobId, files, SERVER);
+    }
+});
+
+// Listen for IPC messages from Electron Main Process
+process.on('message', async (msg) => {
+    if (msg.type === 'JOB_ACCEPTED' && activeJobOffer?.jobId === msg.jobId) {
+        console.log('✅ Job accepted by local contributor:', msg.jobId);
+        const { jobId, files, serverUrl } = activeJobOffer;
+        activeJobOffer = null;
+        executeJob(jobId, files, serverUrl);
+    } 
+    else if (msg.type === 'JOB_REJECTED' && activeJobOffer?.jobId === msg.jobId) {
+        console.log('❌ Job rejected by local contributor:', msg.jobId);
+        const SERVER = activeJobOffer.serverUrl;
+        activeJobOffer = null;
+        try {
+            await axios.post(`${SERVER}/job-update`, {
+                jobId: msg.jobId,
+                status: 'rejected',
+                workerUrl
+            });
+        } catch (e) {
+            console.error('Failed to send rejection to server');
+        }
+    }
+});
+
+async function executeJob(jobId, files, SERVER) {
     try {
         await axios.post(`${SERVER}/job-update`, { jobId, status: 'running', workerUrl });
 
@@ -121,7 +162,6 @@ app.post('/execute', async (req, res) => {
 
         console.log('🧠 Executing:', mainFile);
 
-        // Decide: Docker or local
         const useDocker = capabilities.dockerAvailable && isDockerRunning();
         let command;
 
@@ -137,7 +177,6 @@ app.post('/execute', async (req, res) => {
         }
 
         exec(command, { timeout: 120000, cwd: jobsPath }, async (err, stdout, stderr) => {
-            // Cleanup job files
             try {
                 for (const f of downloadedFiles) {
                     const fp = path.join(jobsPath, f);
@@ -170,7 +209,7 @@ app.post('/execute', async (req, res) => {
             error: err.message, workerUrl
         }).catch(() => {});
     }
-});
+}
 
 // ==================== START ====================
 function startWorkerServer(port) {

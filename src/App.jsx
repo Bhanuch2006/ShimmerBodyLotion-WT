@@ -13,6 +13,7 @@ import Sidebar from './components/Sidebar';
 import GlitterTrail from './components/GlitterTrail';
 import NetworkCanvas from './components/NetworkCanvas';
 import CustomCursor from './components/CustomCursor';
+import JobOfferModal from './components/JobOfferModal';
 import { useTheme } from './hooks/useTheme';
 
 // Window Controls Component (Electron)
@@ -99,6 +100,7 @@ function App() {
             <CustomCursor theme={theme} />
             <GlitterTrail theme={theme} />
             <NetworkCanvas theme={theme} />
+            <JobOfferModal />
             <SocketProvider>
                 <Router>
                     <div data-theme={theme} style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>

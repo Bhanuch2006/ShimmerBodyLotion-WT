@@ -83,7 +83,7 @@ app.post('/heartbeat', (req, res) => {
 
 // ==================== JOB SUBMISSION ====================
 app.post('/submit-job', (req, res) => {
-    const { files } = req.body;
+    const { files, description, resources_required } = req.body;
     if (!files || files.length === 0) {
         return res.status(400).json({ error: 'No files provided' });
     }
@@ -91,6 +91,8 @@ app.post('/submit-job', (req, res) => {
     const jobId = crypto.randomUUID();
     const job = {
         id: jobId, files, status: 'queued',
+        description: description || 'No description provided',
+        resources_required: resources_required || { cpu: 1, ram: 0.5, gpu: false },
         submittedAt: Date.now(), assignedWorker: null,
         startedAt: null, completedAt: null,
         result: null, error: null, retries: 0
@@ -136,6 +138,19 @@ app.post('/job-update', (req, res) => {
             worker.currentJob = null;
         }
         console.log('❌ Job failed:', jobId);
+    } else if (status === 'rejected') {
+        // Handle worker node dynamically rejecting the 60-second offer
+        const worker = workers.get(job.assignedWorker);
+        if (worker) {
+            // Apply slight penalty to trust score, or no penalty
+            worker.trustScore = Math.max(0, worker.trustScore - 2); 
+            worker.currentJob = null;
+        }
+        job.status = 'queued';
+        job.assignedWorker = null;
+        job.retries++;
+        jobQueue.unshift(job.id); // Put back to front of queue
+        console.log('↩️ Job rejected, returned to queue:', jobId);
     }
 
     broadcastUpdate();
@@ -163,11 +178,13 @@ function processQueue() {
         job.assignedWorker = worker.url;
         worker.currentJob = jobId;
 
-        console.log('🚀 Assigning job', jobId, 'to', worker.url);
+        console.log('🚀 Offering job', jobId, 'to', worker.url);
 
-        axios.post(`${worker.url}/execute`, {
+        axios.post(`${worker.url}/offer`, {
             jobId: job.id,
             files: job.files,
+            description: job.description,
+            resources: job.resources_required,
             serverUrl: 'http://localhost:3000'
         }).catch(err => {
             console.error('❌ Failed to dispatch to worker:', worker.url, err.message);

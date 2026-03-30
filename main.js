@@ -107,6 +107,11 @@ ipcMain.handle('toggle-worker', (event, start, serverUrl) => {
         });
         workerProcess.stdout.on('data', d => process.stdout.write(`[Worker] ${d}`));
         workerProcess.stderr.on('data', d => process.stderr.write(`[Worker ERR] ${d}`));
+        
+        workerProcess.on('message', (msg) => {
+            if (mainWindow) mainWindow.webContents.send('worker-message', msg);
+        });
+
         workerProcess.on('exit', () => {
             workerProcess = null;
             if (mainWindow) mainWindow.webContents.send('worker-status', false);
@@ -126,6 +131,14 @@ ipcMain.on('window-maximize', () => {
     else mainWindow?.maximize();
 });
 ipcMain.on('window-close', () => mainWindow?.close());
+
+ipcMain.handle('worker-reply', (event, msgType, data) => {
+    if (workerProcess) {
+        workerProcess.send({ type: msgType, ...data });
+        return { status: 'sent' };
+    }
+    return { status: 'worker-offline' };
+});
 
 // ==================== APP LIFECYCLE ====================
 app.whenReady().then(async () => {
