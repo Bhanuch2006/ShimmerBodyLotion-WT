@@ -46,22 +46,55 @@ const capabilities = getCapabilities();
 console.log('🖥️ Capabilities:', JSON.stringify(capabilities, null, 2));
 
 // ==================== REGISTRATION & HEARTBEAT ====================
+let registrationAttempts = 0;
+const maxRegistrationAttempts = 20;
+const baseRegistrationDelay = 3000; // 3 seconds
+
 async function registerWorker() {
     try {
         const res = await axios.post(`${SERVER_URL}/register`, { workerUrl, capabilities });
         console.log('✅ Registered | Trust:', res.data.trustScore, '| Credits:', res.data.credits);
+        
+        // Reset attempt counter on successful registration
+        registrationAttempts = 0;
+        
+        // Set up heartbeats once registered
+        if (!global.heartbeatInterval) {
+            global.heartbeatInterval = setInterval(sendHeartbeat, 10000);
+        }
     } catch (err) {
-        console.error('❌ Registration failed:', err.message);
+        registrationAttempts++;
+        const delay = Math.min(baseRegistrationDelay * Math.pow(2, Math.floor(registrationAttempts / 3)), 120000);
+        console.error(`❌ Registration failed (attempt ${registrationAttempts}/${maxRegistrationAttempts}): ${err.message}`);
+        
+        if (registrationAttempts < maxRegistrationAttempts) {
+            console.log(`   Retrying in ${delay / 1000}s...`);
+            setTimeout(registerWorker, delay);
+        } else {
+            console.error('❌ Max registration attempts reached. Check server connectivity.');
+        }
     }
 }
 
 async function sendHeartbeat() {
-    try { await axios.post(`${SERVER_URL}/heartbeat`, { workerUrl }); }
-    catch {}
+    try {
+        await axios.post(`${SERVER_URL}/heartbeat`, { workerUrl });
+    } catch (err) {
+        console.warn('⚠️ Heartbeat failed:', err.message);
+        // Don't stop on heartbeat failure, server may be temporarily down
+    }
 }
 
-setInterval(sendHeartbeat, 10000);
-setInterval(registerWorker, 30000);
+// Initial registration
+registerWorker();
+
+// Re-attempt registration every 30 seconds if not yet registered
+setInterval(() => {
+    if (registrationAttempts > 0) {
+        console.log('Attempting to re-register...');
+        registerWorker();
+    }
+}, 30000);
 
 // ==================== FILE DOWNLOAD ====================
 async function downloadFile(url, outputPath) {
@@ -172,9 +205,35 @@ app.post('/execute', async (req, res) => {
     }
 });
 
+// ==================== CLEAN DISCONNECT ====================
+async function unregisterWorker() {
+    try {
+        await axios.post(`${SERVER_URL}/unregister`, { workerUrl }, { timeout: 3000 });
+        console.log('👋 Unregistered from server');
+    } catch {}
+}
+
+// Handle graceful shutdown
+process.on('SIGTERM', async () => { await unregisterWorker(); process.exit(0); });
+process.on('SIGINT', async () => { await unregisterWorker(); process.exit(0); });
+process.on('exit', () => {
+    // Sync request on exit as last resort
+    try {
+        const http = require('http');
+        const url = new URL(`${SERVER_URL}/unregister`);
+        const data = JSON.stringify({ workerUrl });
+        const req = http.request({ hostname: url.hostname, port: url.port, path: url.pathname, method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': data.length }
+        });
+        req.write(data);
+        req.end();
+    } catch {}
+});
+
 // ==================== START ====================
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Worker running at ${workerUrl}`);
+    console.log(`   Server: ${SERVER_URL}`);
     console.log(`   Docker: ${capabilities.dockerAvailable ? '✅' : '❌'}`);
     console.log(`   GPU: ${capabilities.gpuAvailable ? capabilities.gpuModel : '❌'}`);
     registerWorker();

@@ -284,9 +284,8 @@
         <nav class="nav">
             <a class="on" data-s="dash" onclick="go('dash')"><span class="ni">📊</span>Dashboard</a>
             <a data-s="submit" onclick="go('submit')"><span class="ni">📤</span>Submit Job</a>
-            <a data-s="workers" onclick="go('workers')"><span class="ni">💻</span>Workers</a>
+            <a data-s="workers" onclick="go('workers')"><span class="ni">💻</span>Connected Devices</a>
             <a data-s="jobs" onclick="go('jobs')"><span class="ni">📋</span>Job History</a>
-            <a data-s="connect" onclick="go('connect')"><span class="ni">🌐</span>Connect Device</a>
         </nav>
 
         <div class="theme-box">
@@ -296,14 +295,6 @@
                 <button class="theme-btn t-light" title="Light" onclick="setTheme('light',this)"></button>
                 <button class="theme-btn t-pink" title="Pink" onclick="setTheme('pink',this)"></button>
             </div>
-        </div>
-
-        <div class="wbox" id="wbox">
-            <h3>Share Compute</h3>
-            <div class="trow"><span>Worker</span>
-                <label class="sw"><input type="checkbox" id="wt" onchange="togW(this.checked)"><span class="sl"></span></label>
-            </div>
-            <div class="wstat"><div class="dot" id="wd"></div><span id="ws">Offline</span></div>
         </div>
 
         <div class="sysbox" id="sysbox">
@@ -348,7 +339,7 @@
 
         <!-- Workers -->
         <section class="sec" id="sec-workers">
-            <h1 class="stitle">Workers</h1>
+            <h1 class="stitle">Connected Devices</h1>
             <div class="wdgrid" id="wDetail"><p class="empty">No workers registered</p></div>
         </section>
 
@@ -356,46 +347,6 @@
         <section class="sec" id="sec-jobs">
             <h1 class="stitle">Job History</h1>
             <div class="card"><div id="jList"><p class="empty">No jobs yet</p></div></div>
-        </section>
-
-        <!-- Connect -->
-        <section class="sec" id="sec-connect">
-            <h1 class="stitle">Connect Device</h1>
-            <div class="conn-card">
-                <h3>🖥️ Your Server</h3>
-                <p style="font-size:13px;color:var(--text-m);margin-bottom:12px">Your server is accessible at:</p>
-                <div id="ipList"><p class="empty">Loading network info...</p></div>
-            </div>
-            <div class="conn-card">
-                <h3>📡 Connect Another Computer</h3>
-                <div class="conn-step">
-                    <div class="conn-num">1</div>
-                    <div class="conn-text"><strong>Install Node.js</strong> on the remote machine from <a href="https://nodejs.org" style="color:var(--accent)">nodejs.org</a></div>
-                </div>
-                <div class="conn-step">
-                    <div class="conn-num">2</div>
-                    <div class="conn-text"><strong>Copy these files</strong> to the remote machine: <code style="color:var(--accent)">worker.js</code> and <code style="color:var(--accent)">package.json</code>, then run <code style="color:var(--accent)">npm install</code></div>
-                </div>
-                <div class="conn-step">
-                    <div class="conn-num">3</div>
-                    <div class="conn-text"><strong>Run the worker</strong> with your server's IP address:</div>
-                </div>
-                <div class="cmd-box" id="connCmd">
-                    <span>set SERVER_URL=http://&lt;YOUR_IP&gt;:3000 && node worker.js</span>
-                    <button class="copy" onclick="copyCmd()">📋</button>
-                </div>
-                <div class="conn-step" style="margin-top:16px">
-                    <div class="conn-num">4</div>
-                    <div class="conn-text"><strong>Allow through firewall:</strong> On Windows, allow Node.js in Windows Defender Firewall for private networks</div>
-                </div>
-            </div>
-            <div class="conn-card">
-                <h3>🌍 Over the Internet</h3>
-                <div class="conn-text" style="font-size:13px">
-                    For internet access, use <strong>port forwarding</strong> on your router (forward port 3000) or use a tunnel like:<br>
-                    <div class="cmd-box" style="margin-top:8px"><span>npx localtunnel --port 3000</span><button class="copy" onclick="copyText('npx localtunnel --port 3000')">📋</button></div>
-                </div>
-            </div>
         </section>
     </main>
 </div>
@@ -475,7 +426,7 @@ function go(s) {
     document.getElementById('sec-'+s).classList.add('on');
     document.querySelectorAll('.nav a').forEach(a => a.classList.remove('on'));
     document.querySelector(`[data-s="${s}"]`).classList.add('on');
-    if (s === 'connect') loadNetInfo();
+
 }
 
 // ========= THEME =========
@@ -538,20 +489,7 @@ function showRes(id) {
 function closeModal() { document.getElementById('modal').classList.remove('show'); }
 document.getElementById('modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeModal(); });
 
-// ========= CONNECT =========
-async function loadNetInfo() {
-    try {
-        const d = await fetch('/api/network-info').then(r => r.json());
-        const el = document.getElementById('ipList');
-        if (d.addresses.length) {
-            el.innerHTML = d.addresses.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-m);font-size:12px">${a.name}</span><span class="ip-val">${a.address}:${d.port}</span></div>`).join('');
-            const ip = d.addresses[0].address;
-            document.getElementById('connCmd').querySelector('span').textContent = `set SERVER_URL=http://${ip}:${d.port} && node worker.js`;
-        } else el.innerHTML = '<p class="empty">No network interfaces found</p>';
-    } catch { document.getElementById('ipList').innerHTML = '<p class="empty">Could not load network info</p>'; }
-}
-function copyCmd() { const t = document.getElementById('connCmd').querySelector('span').textContent; copyText(t); }
-function copyText(t) { navigator.clipboard.writeText(t).then(() => toast('📋 Copied!', 'ok')); }
+
 
 // ========= TOAST =========
 function toast(msg, type) {
@@ -574,10 +512,8 @@ async function initElectron() {
         document.getElementById('sm').textContent = i.totalMemory+' GB';
         document.getElementById('sp').textContent = i.platform;
     } catch {}
-    window.electronAPI.onWorkerStatus(r => { document.getElementById('wt').checked = r; updWS(r); });
 }
-async function togW(s) { if (window.electronAPI) { await window.electronAPI.toggleWorker(s); updWS(s); } }
-function updWS(on) { document.getElementById('wd').classList.toggle('on',on); document.getElementById('ws').textContent = on?'Online — Sharing compute':'Offline'; }
+
 initElectron();
 </script>
 </body>

@@ -1,0 +1,5 @@
+{
+  "serverUrl": "https://shimmerbodylotion-wt.onrender.com",
+  "description": "Update this file with your production server URL after deployment. This allows automatic connection discovery.",
+  "instructions": "Replace https://your-deployed-server.onrender.com with your actual server URL (e.g., from Render, Railway, Heroku, etc.)"
+}

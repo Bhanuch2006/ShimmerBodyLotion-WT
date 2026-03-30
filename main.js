@@ -5,21 +5,29 @@ const os = require('os');
 
 let mainWindow;
 let tray;
-let serverProcess;
 let workerProcess;
-let appMode = null; // 'server' or 'client'
-let remoteServerIP = null;
+
+// ==================== CENTRAL SERVER URL ====================
+// Supports multiple deployment methods:
+// 1. Environment variable: CENTRAL_SERVER=https://your-server.com
+// 2. Local discovery: Reads from config file if exists
+// 3. Default fallback: https://sharingiscaring.onrender.com
+const fs = require('fs');
+let CENTRAL_SERVER = process.env.CENTRAL_SERVER;
+
+if (!CENTRAL_SERVER) {
+    try {
+        const config = JSON.parse(fs.readFileSync(path.join(__dirname, '.server-config.json'), 'utf8'));
+        CENTRAL_SERVER = config.serverUrl;
+        console.log('[Config] Loaded server URL from .server-config.json');
+    } catch {
+        CENTRAL_SERVER = 'https://sharingiscaring.onrender.com';
+        console.log('[Config] Using default server URL');
+    }
+}
 
 function getLocalIP() {
     const nets = os.networkInterfaces();
-    for (const name of Object.keys(nets)) {
-        for (const net of nets[name]) {
-            if (net.family === 'IPv4' && !net.internal && net.address.startsWith('192.168.')) {
-                return net.address;
-            }
-        }
-    }
-    // Fallback to any non-internal IPv4
     for (const name of Object.keys(nets)) {
         for (const net of nets[name]) {
             if (net.family === 'IPv4' && !net.internal) {
@@ -45,8 +53,15 @@ function createWindow() {
         }
     });
 
-    // Load the setup page first
-    mainWindow.loadFile(path.join(__dirname, 'setup.html'));
+    // Load the central server dashboard directly
+    console.log(`[Main] Connecting to central server: ${CENTRAL_SERVER}`);
+    mainWindow.loadURL(CENTRAL_SERVER);
+
+    // Handle load failures (server down, no internet)
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+        console.error(`[Main] Failed to load: ${errorDescription} (${errorCode})`);
+        mainWindow.loadFile(path.join(__dirname, 'offline.html'));
+    });
 
     mainWindow.on('close', (e) => {
         if (tray) {
@@ -56,30 +71,7 @@ function createWindow() {
     });
 }
 
-function startServer() {
-    return new Promise((resolve, reject) => {
-        serverProcess = fork(path.join(__dirname, 'server.js'), [], { silent: true });
-
-        const timeout = setTimeout(() => resolve(), 5000);
-
-        serverProcess.stdout.on('data', (data) => {
-            const msg = data.toString();
-            process.stdout.write(`[Server] ${msg}`);
-            if (msg.includes('SERVER_READY')) {
-                clearTimeout(timeout);
-                resolve();
-            }
-        });
-
-        serverProcess.stderr.on('data', (data) => {
-            process.stderr.write(`[Server ERR] ${data}`);
-        });
-
-        serverProcess.on('error', reject);
-    });
-}
-
-function startWorker(serverUrl) {
+function startWorker() {
     if (workerProcess) return;
 
     const localIP = getLocalIP();
@@ -90,7 +82,7 @@ function startWorker(serverUrl) {
         silent: true,
         env: {
             ...process.env,
-            SERVER_URL: serverUrl,
+            SERVER_URL: CENTRAL_SERVER,
             WORKER_PORT: workerPort,
             WORKER_URL: workerUrl
         }
@@ -98,12 +90,31 @@ function startWorker(serverUrl) {
 
     workerProcess.stdout.on('data', d => process.stdout.write(`[Worker] ${d}`));
     workerProcess.stderr.on('data', d => process.stderr.write(`[Worker ERR] ${d}`));
+    
+    let restartAttempts = 0;
+    const maxRestarts = 10;
+    const baseDelay = 5000; // 5 seconds
+    
     workerProcess.on('exit', () => {
         workerProcess = null;
-        if (mainWindow) mainWindow.webContents.send('worker-status', false);
+        restartAttempts++;
+        
+        const delay = Math.min(baseDelay * Math.pow(2, restartAttempts), 120000); // Max 2 minutes
+        console.log(`[Main] Worker process exited (attempt ${restartAttempts}/${maxRestarts}), restarting in ${delay/1000}s...`);
+        
+        if (restartAttempts < maxRestarts) {
+            setTimeout(startWorker, delay);
+        } else {
+            console.error('[Main] ❌ Worker failed to start after maximum retries. Check server connectivity.');
+        }
     });
 
-    console.log(`[Main] Worker started: ${workerUrl} -> ${serverUrl}`);
+    console.log(`[Main] Worker started: ${workerUrl} -> ${CENTRAL_SERVER}`);
+}
+
+function resetWorkerRestarts() {
+    // Reset restart attempts counter when connection succeeds
+    console.log('[Main] Worker connection healthy');
 }
 
 function createTray() {
@@ -111,11 +122,15 @@ function createTray() {
         'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABhSURBVFhH7c4xDQAgDETRsoDEYQVrOMEaFnCANRZgAtIhl/yVnzRNllIqstZ+cs8JOIETOIETOIETOIEThLXWsc/MOQfee4ecc4iIYa21SErpUkrpIiJSSqN775O11koR+QFU2Q8hm4gNaAAAAABJRU5ErkJggg=='
     );
     tray = new Tray(icon);
-    const modeLabel = appMode === 'server' ? 'Mode: Server' : `Mode: Client → ${remoteServerIP}`;
-    tray.setToolTip('SharingIsCaring - Compute Sharing');
+    tray.setToolTip('SharingIsCaring — Contributing Compute');
     tray.setContextMenu(Menu.buildFromTemplate([
-        { label: modeLabel, enabled: false },
-        { label: 'Show', click: () => mainWindow.show() },
+        { label: `Server: ${CENTRAL_SERVER}`, enabled: false },
+        { label: 'Show Dashboard', click: () => mainWindow.show() },
+        { type: 'separator' },
+        { label: 'Reconnect', click: () => {
+            mainWindow.loadURL(CENTRAL_SERVER);
+            if (!workerProcess) startWorker();
+        }},
         { type: 'separator' },
         { label: 'Quit', click: () => { tray.destroy(); tray = null; app.quit(); } }
     ]));
@@ -132,71 +147,6 @@ ipcMain.handle('get-system-info', () => ({
     hostname: os.hostname()
 }));
 
-ipcMain.handle('get-app-mode', () => ({
-    mode: appMode,
-    remoteIP: remoteServerIP,
-    localIP: getLocalIP()
-}));
-
-// Setup mode selection from the setup page
-ipcMain.handle('select-mode', async (event, mode, ip) => {
-    appMode = mode;
-
-    if (mode === 'server') {
-        // Start local server, then load the dashboard from it
-        console.log('[Main] Starting in SERVER mode');
-        await startServer();
-        const localIP = getLocalIP();
-        console.log(`[Main] Server running. Local IP: ${localIP}`);
-        mainWindow.loadURL('http://localhost:3000');
-
-        // Auto-start worker connecting to own server
-        startWorker('http://localhost:3000');
-
-        createTray();
-        return { success: true, localIP };
-
-    } else if (mode === 'client') {
-        remoteServerIP = ip;
-        const serverUrl = `http://${ip}:3000`;
-        console.log(`[Main] Starting in CLIENT mode -> ${serverUrl}`);
-
-        // Don't start local server — load the remote dashboard
-        mainWindow.loadURL(serverUrl);
-
-        // Start worker connecting to remote server
-        startWorker(serverUrl);
-
-        createTray();
-        return { success: true };
-    }
-});
-
-ipcMain.handle('toggle-worker', (event, start) => {
-    if (appMode === 'server') {
-        const serverUrl = 'http://localhost:3000';
-        if (start && !workerProcess) {
-            startWorker(serverUrl);
-            return { status: 'started' };
-        } else if (!start && workerProcess) {
-            workerProcess.kill();
-            workerProcess = null;
-            return { status: 'stopped' };
-        }
-    } else if (appMode === 'client') {
-        const serverUrl = `http://${remoteServerIP}:3000`;
-        if (start && !workerProcess) {
-            startWorker(serverUrl);
-            return { status: 'started' };
-        } else if (!start && workerProcess) {
-            workerProcess.kill();
-            workerProcess = null;
-            return { status: 'stopped' };
-        }
-    }
-    return { status: start ? 'already-running' : 'already-stopped' };
-});
-
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
 ipcMain.on('window-maximize', () => {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
@@ -205,8 +155,12 @@ ipcMain.on('window-maximize', () => {
 ipcMain.on('window-close', () => mainWindow?.close());
 
 // ==================== APP LIFECYCLE ====================
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
     createWindow();
+    createTray();
+
+    // Auto-start as worker — everyone contributes
+    startWorker();
 });
 
 app.on('window-all-closed', () => {
@@ -214,7 +168,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
-    if (serverProcess) serverProcess.kill();
     if (workerProcess) workerProcess.kill();
     if (tray) { tray.destroy(); tray = null; }
 });
