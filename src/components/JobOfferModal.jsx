@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 const JobOfferModal = () => {
     const [offer, setOffer] = useState(null);
     const [timeLeft, setTimeLeft] = useState(0);
+    const [deadline, setDeadline] = useState(null);
 
     useEffect(() => {
         if (!window.electronAPI) return;
@@ -10,28 +11,37 @@ const JobOfferModal = () => {
         window.electronAPI.onWorkerMessage((msg) => {
             if (msg.type === 'JOB_OFFER') {
                 setOffer(msg.data);
+                const nextDeadline = Date.now() + 60000;
+                setDeadline(nextDeadline);
                 setTimeLeft(60);
             }
         });
     }, []);
 
     useEffect(() => {
-        let timer;
-        if (offer && timeLeft > 0) {
-            timer = setInterval(() => {
-                setTimeLeft(prev => prev - 1);
-            }, 1000);
-        } else if (offer && timeLeft === 0) {
-            handleReject();
-        }
+        if (!offer || !deadline) return;
+
+        const tick = () => {
+            const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+            setTimeLeft(remaining);
+
+            if (remaining === 0) {
+                handleReject();
+            }
+        };
+
+        tick();
+        const timer = setInterval(tick, 1000);
         return () => clearInterval(timer);
-    }, [offer, timeLeft]);
+    }, [offer, deadline]);
 
     const handleAccept = () => {
         if (window.electronAPI && offer) {
             window.electronAPI.sendWorkerReply('JOB_ACCEPTED', { jobId: offer.jobId });
         }
         setOffer(null);
+        setDeadline(null);
+        setTimeLeft(0);
     };
 
     const handleReject = () => {
@@ -39,6 +49,8 @@ const JobOfferModal = () => {
             window.electronAPI.sendWorkerReply('JOB_REJECTED', { jobId: offer.jobId });
         }
         setOffer(null);
+        setDeadline(null);
+        setTimeLeft(0);
     };
 
     if (!offer) return null;

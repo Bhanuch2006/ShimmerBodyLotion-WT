@@ -7,6 +7,7 @@ let mainWindow;
 let tray;
 let serverProcess;
 let workerProcess;
+const locallySubmittedJobIds = new Set();
 
 // Set custom user data path to avoid cache access issues in shared environments
 const userDataPath = path.join(__dirname, '.electron_data');
@@ -132,6 +133,11 @@ ipcMain.handle('toggle-worker', (event, start, serverUrl) => {
             if (mainWindow) mainWindow.webContents.send('worker-message', msg);
         });
 
+        // Ensure worker knows which jobs were submitted from this local app.
+        for (const jobId of locallySubmittedJobIds) {
+            workerProcess.send({ type: 'SUBMITTED_JOB', jobId });
+        }
+
         workerProcess.on('exit', () => {
             workerProcess = null;
             if (mainWindow) mainWindow.webContents.send('worker-status', false);
@@ -158,6 +164,20 @@ ipcMain.handle('worker-reply', (event, msgType, data) => {
         return { status: 'sent' };
     }
     return { status: 'worker-offline' };
+});
+
+ipcMain.handle('mark-submitted-job', (event, jobId) => {
+    if (!jobId || typeof jobId !== 'string') {
+        return { status: 'invalid-job-id' };
+    }
+
+    locallySubmittedJobIds.add(jobId);
+
+    if (workerProcess) {
+        workerProcess.send({ type: 'SUBMITTED_JOB', jobId });
+    }
+
+    return { status: 'recorded' };
 });
 
 // ==================== APP LIFECYCLE ====================

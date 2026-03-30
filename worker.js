@@ -12,7 +12,7 @@ app.use(express.json());
 const PORT = parseInt(process.env.WORKER_PORT) || 4000;
 const SERVER_URL = process.env.SERVER_URL || 'https://shimmerbodylotion-wt.onrender.com';
 const NGROK_AUTHTOKEN = process.env.NGROK_AUTHTOKEN || null;
-const WORKER_CLIENT_ID = process.env.WORKER_CLIENT_ID || os.hostname();
+const WORKER_CLIENT_ID = process.env.WORKER_CLIENT_ID || `host:${os.hostname()}`;
 
 let workerUrl = process.env.WORKER_URL || null;
 
@@ -53,6 +53,7 @@ console.log('🖥️ Capabilities:', JSON.stringify(capabilities, null, 2));
 let isExecuting = false;
 let registered = false;
 let activeJobOffer = null;
+const locallySubmittedJobIds = new Set();
 
 function getOfferPayload(job) {
     return {
@@ -94,6 +95,11 @@ function requestJobApproval(job) {
 }
 
 process.on('message', (msg = {}) => {
+    if (msg.type === 'SUBMITTED_JOB' && msg.jobId) {
+        locallySubmittedJobIds.add(msg.jobId);
+        return;
+    }
+
     if (!activeJobOffer) return;
     const { type, jobId } = msg;
     if (!jobId || jobId !== activeJobOffer.jobId) return;
@@ -158,6 +164,16 @@ async function pollForJob() {
         const { job } = res.data;
 
         if (job) {
+            if (locallySubmittedJobIds.has(job.jobId)) {
+                console.log(`⛔ Ignoring self-submitted job: ${job.jobId}`);
+                await axios.post(`${SERVER_URL}/job-update`, {
+                    jobId: job.jobId,
+                    status: 'rejected',
+                    workerUrl
+                });
+                return;
+            }
+
             console.log(`📋 Job offer received: ${job.jobId}`);
             const approved = await requestJobApproval(job);
 

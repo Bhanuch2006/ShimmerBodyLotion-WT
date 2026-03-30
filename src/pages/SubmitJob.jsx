@@ -16,20 +16,27 @@ const SubmitJob = () => {
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
 
-    const getSubmitterClientId = async () => {
+    const getSubmitterIdentity = async () => {
         if (window.electronAPI?.getSystemInfo) {
             try {
                 const info = await window.electronAPI.getSystemInfo();
-                if (info?.hostname) return `host:${info.hostname}`;
+                if (info?.hostname) {
+                    return {
+                        clientId: `host:${info.hostname}`,
+                        hostname: info.hostname
+                    };
+                }
             } catch {}
         }
 
         const key = 'submitter_client_id';
         const existing = localStorage.getItem(key);
-        if (existing) return existing;
+        if (existing) {
+            return { clientId: existing, hostname: null };
+        }
         const generated = `web:${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         localStorage.setItem(key, generated);
-        return generated;
+        return { clientId: generated, hostname: null };
     };
 
     // Resource Estimation Effect
@@ -140,13 +147,18 @@ const SubmitJob = () => {
 
             // Submit the job
             console.log(`[SubmitJob] Submitting job to ${currentUrl}/submit-job`);
-            const submitterClientId = await getSubmitterClientId();
-            await axios.post(`${currentUrl}/submit-job`, {
+            const { clientId: submitterClientId, hostname: submitterHostname } = await getSubmitterIdentity();
+            const submitRes = await axios.post(`${currentUrl}/submit-job`, {
                 description: description.trim(),
                 files: uploadRes.data.files,
                 resources_required: { ...resources },
-                submitterClientId
+                submitterClientId,
+                submitterHostname
             }, { timeout: 10000 });
+
+            if (window.electronAPI?.markSubmittedJob && submitRes?.data?.jobId) {
+                await window.electronAPI.markSubmittedJob(submitRes.data.jobId);
+            }
 
             console.log('[SubmitJob] ✅ Job submitted successfully!');
             setFiles([]);

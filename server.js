@@ -77,6 +77,16 @@ const workers = new Map();
 const jobs = new Map();
 const jobQueue = [];
 
+function normalizeClientId(value) {
+    if (!value || typeof value !== 'string') return null;
+    return value.trim().toLowerCase();
+}
+
+function normalizeHost(value) {
+    if (!value || typeof value !== 'string') return null;
+    return value.trim().toLowerCase();
+}
+
 // ==================== FILE UPLOAD ====================
 const localDiskStorage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
@@ -149,6 +159,7 @@ app.post('/upload', upload.array('files'), async (req, res) => {
 app.post('/register', (req, res) => {
     const { workerUrl, capabilities, workerClientId } = req.body;
     const existing = workers.get(workerUrl);
+    const normalizedClientId = normalizeClientId(workerClientId) || existing?.clientId || null;
 
     workers.set(workerUrl, {
         url: workerUrl,
@@ -162,8 +173,8 @@ app.post('/register', (req, res) => {
         currentJob: existing ? existing.currentJob : null,
         registeredAt: existing ? existing.registeredAt : Date.now(),
         lastAssignedAt: existing ? existing.lastAssignedAt : 0,
-        jobHistory: existing ? existing.jobHistory : []
-        , clientId: workerClientId || existing?.clientId || null
+        jobHistory: existing ? existing.jobHistory : [],
+        clientId: normalizedClientId
     });
 
     console.log(`✅ Worker registered (${workers.size} total):`, workerUrl);
@@ -199,10 +210,13 @@ app.post('/heartbeat', (req, res) => {
 
 // ==================== JOB SUBMISSION ====================
 app.post('/submit-job', (req, res) => {
-    const { files, description, resources_required, submitterClientId } = req.body;
+    const { files, description, resources_required, submitterClientId, submitterHostname } = req.body;
     if (!files || files.length === 0) {
         return res.status(400).json({ error: 'No files provided' });
     }
+
+    const normalizedSubmitterClientId = normalizeClientId(submitterClientId);
+    const normalizedSubmitterHostname = normalizeHost(submitterHostname);
 
     const jobId = crypto.randomUUID();
     const fileSignature = files.map(f => path.basename(f)).sort().join('|');
@@ -215,7 +229,8 @@ app.post('/submit-job', (req, res) => {
         result: null, error: null, retries: 0,
         fileSignature,
         targetWorker: null,
-        submitterClientId: submitterClientId || null
+        submitterClientId: normalizedSubmitterClientId,
+        submitterHostname: normalizedSubmitterHostname
     };
 
     jobs.set(jobId, job);
@@ -268,6 +283,12 @@ app.post('/poll-job', (req, res) => {
 
         // Never assign a job back to the same client that submitted it.
         if (job.submitterClientId && worker.clientId && job.submitterClientId === worker.clientId) {
+            continue;
+        }
+
+        // Fallback safety: block self-assignment by hostname even if client IDs are missing.
+        const workerHost = normalizeHost(worker.capabilities?.hostname);
+        if (job.submitterHostname && workerHost && job.submitterHostname === workerHost) {
             continue;
         }
         

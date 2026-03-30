@@ -9,5 +9,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getServerUrl: () => ipcRenderer.invoke('get-server-url'),
     onWorkerStatus: (callback) => ipcRenderer.on('worker-status', (_, data) => callback(data)),
     onWorkerMessage: (callback) => ipcRenderer.on('worker-message', (_, msg) => callback(msg)),
-    sendWorkerReply: (msgType, data) => ipcRenderer.invoke('worker-reply', msgType, data)
+    sendWorkerReply: (msgType, data) => ipcRenderer.invoke('worker-reply', msgType, data),
+    markSubmittedJob: (jobId) => ipcRenderer.invoke('mark-submitted-job', jobId)
 });
