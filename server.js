@@ -7,23 +7,29 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
-const cloudinary = require('cloudinary').v2;
 const { Readable } = require('stream');
 
-// ==================== CLOUDINARY SETUP ====================
-cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key: process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET
-});
-
-if (!cloudinary.config().cloud_name) {
-    console.error('❌ ERROR: Cloudinary credentials not found!');
-    console.error('   Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET');
-    process.exit(1);
+// ==================== CLOUDINARY SETUP (Optional) ====================
+let cloudinary = null;
+try {
+    cloudinary = require('cloudinary').v2;
+    
+    cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+    
+    if (cloudinary.config().cloud_name) {
+        console.log(`☁️ Cloudinary configured: ${cloudinary.config().cloud_name}`);
+    } else {
+        cloudinary = null; // Not configured
+        console.log('📦 Cloudinary credentials not set, using fallback storage');
+    }
+} catch (err) {
+    console.log('📦 Cloudinary not installed, using fallback storage');
+    cloudinary = null;
 }
-
-console.log(`☁️ Cloudinary configured: ${cloudinary.config().cloud_name}`);
 
 const app = express();
 const server = http.createServer(app);
@@ -50,12 +56,16 @@ const jobs = new Map();          // jobId -> job data
 const jobQueue = [];             // pending job IDs
 let roundRobinIndex = 0;         // for fair round-robin scheduling
 
-// ==================== FILE UPLOAD (Cloudinary) ====================
+// ==================== FILE UPLOAD ====================
 const storage = multer.memoryStorage();
 const upload = multer({ 
     storage,
     limits: { fileSize: 100 * 1024 * 1024 } // 100MB max
 });
+
+// Store file data/URLs
+const fileUrls = new Map(); // filename -> cloudinary_url or fallback data
+const fileBuffers = new Map(); // filename -> buffer (fallback)
 
 app.post('/upload', upload.array('files'), async (req, res) => {
     if (!req.files || req.files.length === 0) {
@@ -63,68 +73,80 @@ app.post('/upload', upload.array('files'), async (req, res) => {
         return res.status(400).json({ error: 'No files uploaded' });
     }
     
-    console.log(`📤 Uploading to Cloudinary: ${req.files.length} files`);
+    console.log(`📤 Uploading: ${req.files.length} files`);
     const files = [];
     
     try {
         for (const file of req.files) {
             const fileName = `${Date.now()}-${file.originalname}`;
             
-            // Upload to Cloudinary using stream
-            await new Promise((resolve, reject) => {
-                const stream = cloudinary.uploader.upload_stream(
-                    {
-                        resource_type: 'auto',
-                        public_id: fileName.replace(/\./g, '-'), // Remove dots for public_id
-                        folder: 'sharingiscaring-uploads'
-                    },
-                    (error, result) => {
-                        if (error) reject(error);
-                        else {
-                            console.log(`   ✅ ${file.originalname} (${file.size} bytes) -> ${result.secure_url}`);
-                            files.push({
-                                name: fileName,
-                                url: result.secure_url,
-                                public_id: result.public_id
-                            });
-                            resolve();
+            // Try Cloudinary if available
+            if (cloudinary) {
+                await new Promise((resolve, reject) => {
+                    const stream = cloudinary.uploader.upload_stream(
+                        {
+                            resource_type: 'auto',
+                            public_id: fileName.replace(/\./g, '-'),
+                            folder: 'sharingiscaring-uploads'
+                        },
+                        (error, result) => {
+                            if (error) reject(error);
+                            else {
+                                console.log(`   ✅ ${file.originalname} -> Cloudinary`);
+                                fileUrls.set(fileName, result.secure_url);
+                                files.push(`uploads/${fileName}`);
+                                resolve();
+                            }
                         }
-                    }
-                );
-                stream.end(file.buffer);
-            });
+                    );
+                    stream.end(file.buffer);
+                });
+            } else {
+                // Fallback: Store in memory
+                fileBuffers.set(fileName, file.buffer);
+                fileUrls.set(fileName, `memory://${fileName}`);
+                files.push(`uploads/${fileName}`);
+                console.log(`   ✅ ${file.originalname} -> Memory Storage`);
+            }
         }
         
-        console.log(`✅ Upload complete. ${files.length} files on Cloudinary.`);
-        res.json({ 
-            files: files.map(f => `uploads/${f.name}|${f.url}|${f.public_id}`)
-        });
+        console.log(`✅ Upload complete. ${files.length} files uploaded.`);
+        res.json({ files });
     } catch (err) {
-        console.error('❌ Upload to Cloudinary failed:', err.message);
+        console.error('❌ Upload failed:', err.message);
         res.status(500).json({ error: 'Upload failed: ' + err.message });
     }
 });
 
-// ==================== FILE DOWNLOAD (from Cloudinary) ====================
+// ==================== FILE DOWNLOAD ====================
 app.get('/uploads/:filename', async (req, res) => {
     try {
         const fileName = req.params.filename;
-        // Parse the special format: filename|url|public_id
-        const parts = fileName.split('|');
+        const url = fileUrls.get(fileName);
         
-        if (parts.length >= 2) {
-            const cloudinaryUrl = parts[1];
-            console.log(`⬇️ Serving from Cloudinary: ${fileName.split('|')[0]}`);
-            
-            // Redirect to Cloudinary URL (faster than proxying)
-            return res.redirect(cloudinaryUrl);
+        if (!url) {
+            console.error(`❌ File not found: ${fileName}`);
+            return res.status(404).json({ error: 'File not found' });
         }
         
-        // Fallback for old format
-        console.error(`❌ Invalid file format: ${fileName}`);
-        res.status(404).json({ error: 'File not found' });
+        console.log(`⬇️ Downloading: ${fileName}`);
+        
+        // If it's a Cloudinary URL, redirect
+        if (url.startsWith('http')) {
+            return res.redirect(url);
+        }
+        
+        // If it's in memory, serve it
+        const buffer = fileBuffers.get(fileName);
+        if (buffer) {
+            res.setHeader('Content-Length', buffer.length);
+            return res.send(buffer);
+        }
+        
+        // Should not reach here
+        res.status(404).json({ error: 'File not available' });
     } catch (err) {
-        console.error('❌ Download failed:', err.message);
+        console.error('❌ Download error:', err.message);
         res.status(500).json({ error: 'Download failed' });
     }
 });
