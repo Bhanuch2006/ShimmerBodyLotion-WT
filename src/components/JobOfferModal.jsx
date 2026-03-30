@@ -5,11 +5,13 @@ const JobOfferModal = () => {
     const [timeLeft, setTimeLeft] = useState(0);
 
     useEffect(() => {
-        if (!window.electronAPI) return;
+        if (!window.electronAPI) {
+            return;
+        }
 
-        window.electronAPI.onWorkerMessage((msg) => {
-            if (msg.type === 'JOB_OFFER') {
-                setOffer(msg.data);
+        window.electronAPI.onWorkerMessage((message) => {
+            if (message.type === 'JOB_OFFER') {
+                setOffer(message.data);
                 setTimeLeft(60);
             }
         });
@@ -17,13 +19,15 @@ const JobOfferModal = () => {
 
     useEffect(() => {
         let timer;
+
         if (offer && timeLeft > 0) {
             timer = setInterval(() => {
-                setTimeLeft(prev => prev - 1);
+                setTimeLeft((previousTime) => previousTime - 1);
             }, 1000);
         } else if (offer && timeLeft === 0) {
             handleReject();
         }
+
         return () => clearInterval(timer);
     }, [offer, timeLeft]);
 
@@ -31,6 +35,7 @@ const JobOfferModal = () => {
         if (window.electronAPI && offer) {
             window.electronAPI.sendWorkerReply('JOB_ACCEPTED', { jobId: offer.jobId });
         }
+
         setOffer(null);
     };
 
@@ -38,57 +43,55 @@ const JobOfferModal = () => {
         if (window.electronAPI && offer) {
             window.electronAPI.sendWorkerReply('JOB_REJECTED', { jobId: offer.jobId });
         }
+
         setOffer(null);
     };
 
-    if (!offer) return null;
+    if (!offer) {
+        return null;
+    }
 
     const { description, resources, files } = offer;
 
     return (
         <div className="modal-bg">
-            <div className="modal" style={{ maxWidth: '500px', padding: '30px', zIndex: 9999 }}>
-                <div className="mh" style={{ flexDirection: 'column', alignItems: 'center', textAlign: 'center', margin: '0 0 24px 0' }}>
-                    <div style={{ fontSize: '40px', marginBottom: '10px' }}>🤝</div>
-                    <h2 style={{ fontSize: '20px', fontWeight: '800' }}>Incoming Compute Request</h2>
-                    <p style={{ color: 'var(--text-m)', fontSize: '13px', marginTop: '8px' }}>
-                        A network transparent job has been offered to your node.
-                    </p>
-                    <div style={{ marginTop: '16px', background: 'rgba(240, 147, 251, 0.15)', padding: '8px 16px', borderRadius: '20px', color: 'var(--accent2)', fontWeight: 'bold' }}>
-                        Accept within {timeLeft} seconds
+            <div className="modal shimmer-modal offer-modal">
+                <div className="mh offer-head">
+                    <div>
+                        <p className="eyebrow">incoming offer</p>
+                        <h2>New compute request</h2>
+                        <p className="offer-copy">
+                            A fresh job just floated in. Accept it before the countdown fades away.
+                        </p>
+                    </div>
+                    <div className="offer-timer">
+                        <strong>{timeLeft}s</strong>
+                        <span>left to reply</span>
                     </div>
                 </div>
 
-                <div className="mc" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', marginBottom: '16px', color: 'var(--text)' }}>
-                    <h4 style={{ color: 'var(--text-m)', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Task Description</h4>
-                    <p style={{ fontSize: '14px', marginBottom: '16px', lineHeight: '1.5' }}>{description}</p>
-                    
-                    <h4 style={{ color: 'var(--text-m)', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Files Included</h4>
-                    <p style={{ fontSize: '13px', marginBottom: '16px', color: 'var(--accent)' }}>
-                        {files && files.length > 0 ? files.map(f => f.split('/').pop()).join(', ') : 'No files'}
-                    </p>
+                <div className="offer-meter">
+                    <span style={{ width: `${(timeLeft / 60) * 100}%` }}></span>
+                </div>
 
-                    <h4 style={{ color: 'var(--text-m)', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Requested System Usage</h4>
-                    <div style={{ display: 'flex', gap: '15px', fontSize: '13px', fontWeight: '600' }}>
-                        <span>⚡ CPU: {resources?.cpu || 1} Cores</span>
-                        <span>🧠 RAM: {resources?.ram || 0.5} GB</span>
-                        {resources?.gpu && <span>🎮 GPU: Required</span>}
+                <div className="offer-grid">
+                    <div className="offer-card">
+                        <span className="offer-label">Description</span>
+                        <p>{description}</p>
+                    </div>
+                    <div className="offer-card">
+                        <span className="offer-label">Files</span>
+                        <p>{files && files.length > 0 ? files.map((file) => file.split('/').pop()).join(', ') : 'No files attached'}</p>
+                    </div>
+                    <div className="offer-card">
+                        <span className="offer-label">Resources</span>
+                        <p>CPU {resources?.cpu || 1} / RAM {resources?.ram || 0.5} GB / {resources?.gpu ? 'GPU needed' : 'CPU only'}</p>
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
-                    <button 
-                        onClick={handleReject}
-                        style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid var(--err)', background: 'rgba(248, 113, 113, 0.1)', color: 'var(--err)', fontWeight: 'bold', cursor: 'pointer' }}
-                    >
-                        Reject Task ❌
-                    </button>
-                    <button 
-                        onClick={handleAccept}
-                        style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: 'var(--ok)', color: 'white', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)' }}
-                    >
-                        Accept & Run ✅
-                    </button>
+                <div className="offer-actions">
+                    <button onClick={handleReject} className="btn btn-ghost">Decline</button>
+                    <button onClick={handleAccept} className="btn btn-p">Accept and run</button>
                 </div>
             </div>
         </div>

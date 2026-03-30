@@ -1,96 +1,115 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { useTheme } from '../hooks/useTheme';
 
-const Sidebar = () => {
+const navItems = [
+    { to: '/', label: 'Dashboard', tag: '01' },
+    { to: '/submit', label: 'Submit Task', tag: '02' },
+    { to: '/workers', label: 'Connected Devices', tag: '03' },
+    { to: '/jobs', label: 'Submitted Tasks', tag: '04' }
+];
+
+const shortHost = (url) => {
+    try {
+        return new URL(url).host;
+    } catch (error) {
+        return url?.replace(/^https?:\/\//, '') || 'not set';
+    }
+};
+
+const Sidebar = ({ isHidden = false }) => {
     const { connected, currentUrl } = useSocket();
     const theme = useTheme();
     const [workerOn, setWorkerOn] = useState(false);
-    const [sysInfo, setSysInfo] = useState({ cpu: '—', cores: '—', mem: '—', plat: '—' });
+    const [sysInfo, setSysInfo] = useState({ cpu: '--', cores: '--', mem: '--', plat: '--' });
 
     useEffect(() => {
-        if (window.electronAPI) {
-            window.electronAPI.getSystemInfo().then(i => {
-                setSysInfo({
-                    cpu: (i.cpuModel || '').split('@')[0].trim().substring(0, 18),
-                    cores: i.cpuCores,
-                    mem: i.totalMemory + ' GB',
-                    plat: i.platform
-                });
-            });
-            window.electronAPI.onWorkerStatus(r => setWorkerOn(r));
+        if (!window.electronAPI) {
+            return;
         }
+
+        window.electronAPI.getSystemInfo().then((info) => {
+            setSysInfo({
+                cpu: (info.cpuModel || '').split('@')[0].trim().substring(0, 22) || '--',
+                cores: info.cpuCores || '--',
+                mem: info.totalMemory ? `${info.totalMemory} GB` : '--',
+                plat: info.platform || '--'
+            });
+        });
+
+        window.electronAPI.onWorkerStatus((running) => setWorkerOn(running));
     }, []);
 
-    const handleThemeChange = (newTheme) => {
-        localStorage.setItem('theme', newTheme);
-        document.documentElement.setAttribute('data-theme', newTheme);
-        document.body.setAttribute('data-theme', newTheme);
+    const handleThemeChange = () => {
+        const nextTheme = theme === 'coquette' ? 'black' : 'coquette';
+        localStorage.setItem('theme', nextTheme);
+        document.documentElement.setAttribute('data-theme', nextTheme);
+        document.body.setAttribute('data-theme', nextTheme);
         window.dispatchEvent(new Event('themechange'));
     };
 
-    const toggleWorker = async (e) => {
-        const checked = e.target.checked;
-        if (window.electronAPI) {
-            await window.electronAPI.toggleWorker(checked, currentUrl);
-            setWorkerOn(checked);
+    const toggleWorker = async (event) => {
+        const checked = event.target.checked;
+
+        if (!window.electronAPI) {
+            return;
         }
+
+        await window.electronAPI.toggleWorker(checked, currentUrl);
+        setWorkerOn(checked);
     };
 
     return (
-        <aside className="side">
-            <div className="logo-wrap">
-                <div className="logo-icon" style={{ background: theme === 'coquette' ? '' : 'transparent', border: theme === 'coquette' ? '' : '1px solid rgba(255,255,255,0.1)' }}>
-                    <span className="default-logo">{theme === 'coquette' ? '🎀' : '🌌'}</span>
-                    <img src="/assets/dino.png" alt="Dino" className="dino-logo" style={{ display: theme === 'pink' ? 'block' : 'none' }} />
+        <header className={`floating-nav-wrap${isHidden ? ' is-hidden' : ''}`}>
+            <div className="floating-nav">
+                <div className="floating-brand">
+                    <div className="logo-icon nav-logo" aria-hidden="true">
+                        <span className="default-logo">wand</span>
+                        <span className="logo-spark logo-spark-a"></span>
+                        <span className="logo-spark logo-spark-b"></span>
+                    </div>
                 </div>
-                <div className="dino-ground"></div>
-                <h2>{theme === 'coquette' ? 'Dashboard' : 'Compute Core'}</h2>
-                <p>{theme === 'coquette' ? 'Lace & Ribbon Network' : 'Distributed Processing'}</p>
+
+                <nav className="nav floating-nav-list">
+                    {navItems.map((item) => (
+                        <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'on nav-pill' : 'nav-pill')}>
+                            <span className="ni" aria-hidden="true">{item.tag}</span>
+                            <span>{item.label}</span>
+                        </NavLink>
+                    ))}
+                </nav>
+
+                <div className="floating-actions">
+                    <button
+                        className={`nav-pill nav-theme-pill ${theme === 'black' ? 'black-mode' : 'girly-mode'}`}
+                        onClick={handleThemeChange}
+                    >
+                        <span className="ni" aria-hidden="true">05</span>
+                        <span>{theme === 'coquette' ? 'Girly Pop' : 'Dark Theme'}</span>
+                    </button>
+                </div>
             </div>
 
-            <nav className="nav">
-                <NavLink to="/" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🎀' : '🌌'}</span>Dashboard</NavLink>
-                <NavLink to="/submit" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '💌' : '🛰️'}</span>Submit Tasks</NavLink>
-                <NavLink to="/workers" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🦢' : '🛸'}</span>Connected Devices</NavLink>
-                <NavLink to="/jobs" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '📜' : '📡'}</span>Submitted Jobs</NavLink>
-                <NavLink to="/connect" className={({ isActive }) => (isActive ? "on" : "")}><span className="ni" style={{ fontFamily: 'sans-serif' }}>{theme === 'coquette' ? '🗝️' : '🪐'}</span>How to</NavLink>
-            </nav>
-
-            <div className="theme-box">
-                <button 
-                    className={`modern-theme-switch ${theme === 'black' ? 'black-mode' : 'girly-mode'}`}
-                    onClick={() => handleThemeChange(theme === 'coquette' ? 'black' : 'coquette')}
-                >
-                    <span className="sw-icon">{theme === 'coquette' ? '🎀' : '🌙'}</span>
-                    <span className="sw-text">{theme === 'coquette' ? 'Girly Pop' : 'Dark Mode'}</span>
-                </button>
-            </div>
-
-            <div className="wbox" id="wbox">
-                <h3>Share Compute</h3>
-                <div className="trow">
-                    <span>Worker</span>
+            <div className="nav-meta-row">
+                <div className="nav-meta-pill">
+                    <span className={`dot ${connected ? 'on' : ''}`}></span>
+                    <span>{connected ? shortHost(currentUrl) : 'offline'}</span>
+                </div>
+                <div className="nav-meta-pill">
+                    <span>{workerOn ? 'worker on' : 'worker off'}</span>
                     <label className="sw">
                         <input type="checkbox" checked={workerOn} onChange={toggleWorker} />
                         <span className="sl"></span>
                     </label>
                 </div>
-                <div className="wstat">
-                    <div className={`dot ${workerOn ? 'on' : ''}`}></div>
-                    <span>{workerOn ? 'Online — Sharing compute' : 'Offline'}</span>
+                <div className="nav-meta-pill nav-system-pill">
+                    <span>{sysInfo.cores} cores</span>
+                    <span>{sysInfo.mem}</span>
+                    <span>{sysInfo.plat}</span>
                 </div>
             </div>
-
-            <div className="sysbox" id="sysbox">
-                <h4>System</h4>
-                <div className="sr"><span>CPU</span><span>{sysInfo.cpu}</span></div>
-                <div className="sr"><span>Cores</span><span>{sysInfo.cores}</span></div>
-                <div className="sr"><span>Memory</span><span>{sysInfo.mem}</span></div>
-                <div className="sr"><span>Platform</span><span>{sysInfo.plat}</span></div>
-            </div>
-        </aside>
+        </header>
     );
 };
 

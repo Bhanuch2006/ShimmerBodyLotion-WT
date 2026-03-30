@@ -1,12 +1,28 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { useTheme } from '../hooks/useTheme';
 import { useSocket } from '../context/SocketContext';
+import { useTheme } from '../hooks/useTheme';
+
+const cuteNotes = [
+    'Pin your Python and CSV goodies at the top first.',
+    'Leave a clear note so the workers know what the job should do.',
+    'Bigger files add more RAM automatically.',
+    'Torch or TensorFlow files nudge the board toward GPU help.'
+];
+
+const formatFileSize = (file) => {
+    const sizeInKb = file.size / 1024;
+    if (sizeInKb < 1024) {
+        return `${sizeInKb.toFixed(1)} KB`;
+    }
+
+    return `${(sizeInKb / 1024).toFixed(2)} MB`;
+};
 
 const SubmitJob = () => {
-    const theme = useTheme();
     const { currentUrl } = useSocket();
+    const theme = useTheme();
     const [files, setFiles] = useState([]);
     const [description, setDescription] = useState('');
     const [resources, setResources] = useState({ cpu: 1, ram: 0.5, gpu: false });
@@ -16,36 +32,43 @@ const SubmitJob = () => {
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
 
-    // Resource Estimation Effect
     useEffect(() => {
         const calculateResources = async () => {
             let totalMB = 0;
             let needsGpu = false;
 
-            for (const f of files) {
-                totalMB += f.size / (1024 * 1024);
-                if (f.name.endsWith('.py')) {
+            for (const file of files) {
+                totalMB += file.size / (1024 * 1024);
+
+                if (file.name.endsWith('.py')) {
                     const text = await new Promise((resolve) => {
                         const reader = new FileReader();
-                        reader.onload = (e) => resolve(e.target.result);
+                        reader.onload = (event) => resolve(event.target.result);
                         reader.onerror = () => resolve('');
-                        reader.readAsText(f);
+                        reader.readAsText(file);
                     });
-                    if (text.includes('import torch') || text.includes('import tensorflow') ||
-                        text.includes('from torch') || text.includes('from tensorflow')) {
+
+                    if (
+                        text.includes('import torch') ||
+                        text.includes('import tensorflow') ||
+                        text.includes('from torch') ||
+                        text.includes('from tensorflow')
+                    ) {
                         needsGpu = true;
                     }
                 }
             }
 
-            // Calculation based on numerical strategy
-            let newCpu = 1 + Math.floor(totalMB / 50);
-            let newRam = 0.5 + (totalMB * 3) / 1024; // MB to GB
-            if (needsGpu) newRam = Math.max(newRam, 4.0); // bump base RAM if GPU task
+            let cpu = 1 + Math.floor(totalMB / 50);
+            let ram = 0.5 + (totalMB * 3) / 1024;
+
+            if (needsGpu) {
+                ram = Math.max(ram, 4.0);
+            }
 
             setResources({
-                cpu: newCpu,
-                ram: newRam.toFixed(2),
+                cpu,
+                ram: ram.toFixed(2),
                 gpu: needsGpu
             });
         };
@@ -53,199 +76,260 @@ const SubmitJob = () => {
         calculateResources();
     }, [files]);
 
-    const handleDragOver = (e) => {
-        e.preventDefault();
-        setIsOver(true);
-    };
-
-    const handleDragLeave = (e) => {
-        e.preventDefault();
-        setIsOver(false);
-    };
-
-    const handleDrop = (e) => {
-        e.preventDefault();
-        setIsOver(false);
-        const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.py') || f.name.endsWith('.csv'));
-        addFiles(droppedFiles);
-    };
-
-    const handleFileInput = (e) => {
-        const selectedFiles = Array.from(e.target.files);
-        addFiles(selectedFiles);
-        e.target.value = null; // reset
-    };
-
     const addFiles = (newFiles) => {
-        setFiles(prev => {
-            const temp = [...prev];
-            newFiles.forEach(nf => {
-                if (!temp.some(existing => existing.name === nf.name)) {
-                    temp.push(nf);
+        const acceptedFiles = newFiles.filter((file) => file.name.endsWith('.py') || file.name.endsWith('.csv'));
+
+        setFiles((previousFiles) => {
+            const nextFiles = [...previousFiles];
+
+            acceptedFiles.forEach((newFile) => {
+                if (!nextFiles.some((existingFile) => existingFile.name === newFile.name)) {
+                    nextFiles.push(newFile);
                 }
             });
-            return temp;
+
+            return nextFiles;
         });
     };
 
-    const removeFile = (idx) => {
-        setFiles(prev => prev.filter((_, i) => i !== idx));
+    const handleDragOver = (event) => {
+        event.preventDefault();
+        setIsOver(true);
+    };
+
+    const handleDragLeave = (event) => {
+        event.preventDefault();
+        setIsOver(false);
+    };
+
+    const handleDrop = (event) => {
+        event.preventDefault();
+        setIsOver(false);
+        addFiles(Array.from(event.dataTransfer.files));
+    };
+
+    const handleFileInput = (event) => {
+        addFiles(Array.from(event.target.files));
+        event.target.value = null;
+    };
+
+    const removeFile = (indexToRemove) => {
+        setFiles((previousFiles) => previousFiles.filter((_, index) => index !== indexToRemove));
     };
 
     const submitJob = async () => {
-        if (!files.length || !description.trim()) return;
-        
+        if (!files.length || !description.trim()) {
+            return;
+        }
+
         if (!currentUrl) {
             alert('Server URL not configured. Please check your connection.');
             return;
         }
 
         setSubmitting(true);
+
         try {
-            // First, check if server is reachable
-            console.log(`[SubmitJob] Testing connection to ${currentUrl}/api/health...`);
             try {
-                const healthCheck = await axios.get(`${currentUrl}/api/health`, { timeout: 5000 });
-                console.log('[SubmitJob] ✅ Server is healthy:', healthCheck.data);
-            } catch (healthErr) {
-                console.warn('[SubmitJob] ⚠️ Server health check failed:', healthErr.message);
-                console.warn('[SubmitJob] Continuing anyway...');
+                await axios.get(`${currentUrl}/api/health`, { timeout: 5000 });
+            } catch (healthError) {
+                console.warn('[SubmitJob] Health check warning:', healthError.message);
             }
 
-            const fd = new FormData();
-            files.forEach(f => fd.append('files', f));
+            const formData = new FormData();
+            files.forEach((file) => formData.append('files', file));
 
-            console.log(`[SubmitJob] Uploading ${files.length} files to ${currentUrl}/upload`);
-            const uploadRes = await axios.post(`${currentUrl}/upload`, fd, {
+            const uploadResponse = await axios.post(`${currentUrl}/upload`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' },
                 timeout: 30000
             });
-            console.log('[SubmitJob] ✅ Files uploaded:', uploadRes.data.files);
 
-            // Submit the job
-            console.log(`[SubmitJob] Submitting job to ${currentUrl}/submit-job`);
-            await axios.post(`${currentUrl}/submit-job`, {
-                description: description.trim(),
-                files: uploadRes.data.files,
-                resources_required: { ...resources }
-            }, { timeout: 10000 });
+            await axios.post(
+                `${currentUrl}/submit-job`,
+                {
+                    description: description.trim(),
+                    files: uploadResponse.data.files,
+                    resources_required: { ...resources }
+                },
+                { timeout: 10000 }
+            );
 
-            console.log('[SubmitJob] ✅ Job submitted successfully!');
             setFiles([]);
             setDescription('');
             navigate('/');
         } catch (error) {
-            const errorMsg = error.response?.data?.error || error.message;
+            const errorMessage = error.response?.data?.error || error.message;
             const statusCode = error.response?.status;
-            
-            let detailedError = errorMsg;
+
+            let detailedError = errorMessage;
             if (error.code === 'ECONNABORTED') {
-                detailedError = 'Request timeout - server is not responding';
+                detailedError = 'Request timeout - server is not responding.';
             } else if (error.code === 'ENOTFOUND') {
-                detailedError = 'Server domain not found - check the URL';
+                detailedError = 'Server domain not found - check the URL.';
             } else if (error.message === 'Network Error') {
-                detailedError = 'Network error - check your internet connection and firewall settings';
+                detailedError = 'Network error - check your internet and firewall settings.';
             }
-            
-            console.error('[SubmitJob] ❌ Error:', {
-                message: errorMsg,
-                status: statusCode,
-                url: currentUrl,
-                code: error.code,
-                error: error
-            });
-            
-            alert(`Error submitting job (${statusCode || 'network error'})\n\nServer: ${currentUrl}\nError: ${detailedError}\n\nCheck the browser console (F12) for more details.`);
+
+            alert(
+                `Error submitting job (${statusCode || 'network error'})\n\nServer: ${currentUrl}\nError: ${detailedError}`
+            );
         } finally {
             setSubmitting(false);
         }
     };
 
     return (
-        <section className="sec on" id="sec-submit">
-            <h1 className="stitle">Exchange Letters</h1>
-            <div className="card" style={{ maxWidth: '800px', margin: '0 auto' }}>
-
-                <div style={{ marginBottom: '20px' }}>
-                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Task Description *</label>
-                    <textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Explain what this task is doing (e.g., Training a CNN on Medical Data)..."
-                        style={{ width: '100%', height: '80px', padding: '12px', borderRadius: '10px', border: '1px solid var(--border)', background: 'var(--bg-0)', color: 'var(--text)', fontFamily: 'inherit' }}
-                        required
-                    />
+        <section className="sec submit-page" id="sec-submit">
+            <div className="page-hero">
+                <div>
+                    <p className="eyebrow">submit task</p>
+                    <h1 className="stitle">{theme === 'coquette' ? 'Compose cloud note' : 'Compose task'}</h1>
+                    <p className="hero-copy">
+                        {theme === 'coquette'
+                            ? 'Files stay pinned at the top, your task note sits below, and the whole page reads more like a cute compose window.'
+                            : 'A cleaner compose layout with attachments on top and the task brief below, arranged more like an email draft.'}
+                    </p>
                 </div>
+            </div>
 
-                <h1 className="stitle"><span className="t-ico" data-type="submit"></span> {theme === 'coquette' ? 'Exchange Letters' : 'Submit Tasks'}</h1>
-                <div className="card">
-                    <div
-                        className={`dz ${isOver ? 'over' : ''}`}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        onClick={() => fileInputRef.current?.click()}
-                        style={{ marginBottom: '20px' }}
-                    >
-                        <div className="dz-i">📁</div>
-                        <p>Drag & drop files or click to browse</p>
-                        <p className="h">Python scripts (.py) and datasets (.csv)</p>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            multiple
-                            accept=".py,.csv"
-                            hidden
-                            onChange={handleFileInput}
-                        />
-                    </div>
+            <div className="submit-layout">
+                <article className="card chat-window mail-window">
+                    <div className="chat-window-grid">
+                        <div className="chat-stage">
+                            <div className="compose-window-bar">
+                                <div className="compose-window-dots" aria-hidden="true">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                </div>
+                                <div className="compose-window-title">
+                                    <strong>{theme === 'coquette' ? 'Cloud note draft' : 'Task draft'}</strong>
+                                    <span>{theme === 'coquette' ? 'attachments above, note below' : 'attachments first, brief below'}</span>
+                                </div>
+                                <div className="compose-window-tag">
+                                    {theme === 'coquette' ? 'draft' : 'compose'}
+                                </div>
+                            </div>
 
-                    <div className="dgrid">
-                        <div style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '14px', background: 'var(--bg-0)' }}>
-                            <h4 style={{ marginBottom: '10px', borderBottom: '1px solid var(--border)', paddingBottom: '5px' }}>Attached Files</h4>
-                            {files.length === 0 ? (
-                                <p style={{ color: 'var(--text-m)', fontSize: '12px' }}>No files added yet.</p>
-                            ) : (
-                                files.map((file, idx) => (
-                                    <div className="fi" key={idx} style={{ padding: '6px 10px', margin: '4px 0' }}>
-                                        <span>{file.name.endsWith('.py') ? '🐍' : '📄'} {file.name} ({(file.size / 1024).toFixed(1)}KB)</span>
-                                        <button className="fr" onClick={(e) => { e.stopPropagation(); removeFile(idx); }}>✕</button>
+                            <div className="compose-section-head">
+                                <p className="eyebrow">attachments</p>
+                                <span className="sl2">{theme === 'coquette' ? 'Pin files first' : 'Stage files first'}</span>
+                            </div>
+
+                            <div
+                                className={`upload-box top-file-shelf ${isOver ? 'over' : ''}`}
+                                onDragOver={handleDragOver}
+                                onDragLeave={handleDragLeave}
+                                onDrop={handleDrop}
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                <div className="upload-box-copy">
+                                    <p className="eyebrow">file shelf</p>
+                                    <h2 className="card-title">Drop files into the upper tray</h2>
+                                    <p className="upload-copy">
+                                        Click or drag files here. The shelf accepts `.py` and `.csv` files and keeps them pinned above your message.
+                                    </p>
+                                </div>
+                                <button className="btn btn-secondary" type="button">
+                                    Browse files
+                                </button>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    multiple
+                                    accept=".py,.csv"
+                                    hidden
+                                    onChange={handleFileInput}
+                                />
+                            </div>
+
+                            <div className="file-clouds">
+                                {files.length === 0 ? (
+                                    <div className="file-placeholder">
+                                        <strong>{theme === 'coquette' ? 'No files pinned yet.' : 'No files staged yet.'}</strong>
+                                        <span>{theme === 'coquette' ? 'Your upload shelf will fill with little cloud cards.' : 'Your upload tray will list the files queued for this task.'}</span>
                                     </div>
-                                ))
-                            )}
-                        </div>
+                                ) : (
+                                    files.map((file, index) => (
+                                        <div className="file-pill" key={`${file.name}-${index}`}>
+                                            <div>
+                                                <strong>{file.name}</strong>
+                                                <span>{formatFileSize(file)}</span>
+                                            </div>
+                                            <button
+                                                className="fr"
+                                                type="button"
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    removeFile(index);
+                                                }}
+                                            >
+                                                remove
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
 
-                        <div style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '14px', background: 'var(--bg-0)' }}>
-                            <h4 style={{ marginBottom: '10px', borderBottom: '1px solid var(--border)', paddingBottom: '5px' }}>Estimated Resources</h4>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '13px' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span style={{ color: 'var(--text-m)' }}>CPU Cores:</span>
-                                    <strong>{resources.cpu}</strong>
+                            <div className="composer-shell message-shell">
+                                <div className="compose-section-head">
+                                    <div>
+                                        <label className="composer-label" htmlFor="job-message">description box</label>
+                                        <span className="sl2">{theme === 'coquette' ? 'Write the task note below' : 'Write the task description below'}</span>
+                                    </div>
                                 </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span style={{ color: 'var(--text-m)' }}>RAM Requirement:</span>
-                                    <strong>{resources.ram} GB</strong>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span style={{ color: 'var(--text-m)' }}>GPU Accelerated:</span>
-                                    <strong style={{ color: resources.gpu ? 'var(--ok)' : 'var(--text)' }}>
-                                        {resources.gpu ? 'Yes (Detected ML Framework)' : 'No'}
-                                    </strong>
+                                <textarea
+                                    id="job-message"
+                                    value={description}
+                                    onChange={(event) => setDescription(event.target.value)}
+                                    placeholder="Tell the workers what this task does, what success looks like, and any little details they should not miss..."
+                                />
+
+                                <div className="composer-footer">
+                                    <button
+                                        className={`btn btn-p ${submitting ? 'is-loading' : ''}`}
+                                        onClick={submitJob}
+                                        disabled={!files.length || submitting || !description.trim()}
+                                    >
+                                        {submitting && (
+                                            <span className="spark-loader" aria-hidden="true">
+                                                <span></span>
+                                                <span></span>
+                                                <span></span>
+                                            </span>
+                                        )}
+                                        {submitting ? (theme === 'coquette' ? 'Sending cloud note' : 'Dispatching task') : (theme === 'coquette' ? 'Send to the clouds' : 'Dispatch task')}
+                                    </button>
                                 </div>
                             </div>
                         </div>
                     </div>
+                </article>
 
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                        <button
-                            className="btn btn-p"
-                            onClick={submitJob}
-                            disabled={!files.length || submitting || !description.trim()}
-                        >
-                            {submitting ? '⏳ Dispatching...' : '💌 Submit Tasks'}
-                        </button>
-                    </div>
-                </div>
+                <aside className="submit-side">
+                    <article className="card sticky-card">
+                        <p className="eyebrow">{theme === 'coquette' ? 'cute notes' : 'field notes'}</p>
+                        <h2 className="card-title">{theme === 'coquette' ? 'Little reminders on the side' : 'Quick reminders on the side'}</h2>
+                        <div className="sticky-list">
+                            {cuteNotes.map((note) => (
+                                <div className="sticky-note" key={note}>
+                                    {note}
+                                </div>
+                            ))}
+                        </div>
+                    </article>
+
+                    <article className="card resource-card">
+                        <p className="eyebrow">resource sketch</p>
+                        <h2 className="card-title">Estimated fit</h2>
+                        <div className="resource-list">
+                            <div className="resource-row"><span>CPU cores</span><strong>{resources.cpu}</strong></div>
+                            <div className="resource-row"><span>RAM</span><strong>{resources.ram} GB</strong></div>
+                            <div className="resource-row"><span>GPU</span><strong>{resources.gpu ? 'Suggested' : 'Not needed'}</strong></div>
+                            <div className="resource-row"><span>Files pinned</span><strong>{files.length}</strong></div>
+                        </div>
+                    </article>
+                </aside>
             </div>
         </section>
     );

@@ -8,9 +8,9 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #060612; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
         .tbar { height: 38px; background: #0c0c24; border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; -webkit-app-region: drag; }
-        .tbar-brand { display: flex; align-items: center; gap: 8px; }
-        .tbar-brand .ico { width: 20px; height: 20px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; }
-        .tbar-brand span { font-size: 12px; font-weight: 600; color: #94a3b8; }
+        .tbar-brand { display: flex; align-items: center; gap: 8px; min-height: 20px; }
+        .tbar-brand .ico { width: 20px; height: 20px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 5px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 11px; line-height: 1; }
+        .tbar-brand span { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; line-height: 1; }
         .tbar-btns { display: flex; gap: 2px; -webkit-app-region: no-drag; }
         .tb { width: 36px; height: 28px; border: none; background: transparent; color: #94a3b8; font-size: 12px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
         .tb:hover { background: rgba(129,140,248,0.15); }

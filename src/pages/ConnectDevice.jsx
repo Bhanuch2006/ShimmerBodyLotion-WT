@@ -1,116 +1,164 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useSocket } from '../context/SocketContext';
-import { useTheme } from '../hooks/useTheme';
 
 const ConnectDevice = () => {
     const { connectToNetwork, currentUrl } = useSocket();
-    const theme = useTheme();
     const [joinIp, setJoinIp] = useState('');
     const [networkInfo, setNetworkInfo] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let isMounted = true;
+
+        if (!currentUrl) {
+            setLoading(false);
+            return undefined;
+        }
+
         axios.get(`${currentUrl}/api/network-info`)
-            .then(res => {
-                setNetworkInfo(res.data);
+            .then((response) => {
+                if (!isMounted) {
+                    return;
+                }
+
+                setNetworkInfo(response.data);
                 setLoading(false);
             })
-            .catch(() => setLoading(false));
+            .catch(() => {
+                if (isMounted) {
+                    setLoading(false);
+                }
+            });
+
+        return () => {
+            isMounted = false;
+        };
     }, [currentUrl]);
 
     const handleJoin = () => {
-        if (!joinIp) return;
-        connectToNetwork(joinIp);
-        // Toast logic could go here
+        if (!joinIp.trim()) {
+            return;
+        }
+
+        connectToNetwork(joinIp.trim());
     };
 
     const copyText = (text) => {
         navigator.clipboard.writeText(text);
-        // Toast logic could go here
     };
 
+    const primaryAddress = networkInfo?.addresses?.[0];
+    const workerCommand = primaryAddress
+        ? `set SERVER_URL=http://${primaryAddress.address}:${networkInfo.port} && node worker.js`
+        : '';
+
     return (
-        <section className="sec on" id="sec-connect">
-            <h1 className="stitle"><span className="t-ico" data-type="howto"></span> How to</h1>
-            
-            <div className="conn-card">
-                <h3>🔗 Join a Network</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-m)', marginBottom: '12px' }}>
-                    Enter the IP address of an existing server to join its cluster:
-                </p>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                    <input 
-                        type="text" 
-                        value={joinIp}
-                        onChange={(e) => setJoinIp(e.target.value)}
-                        placeholder="http://192.168.1.X:3000" 
-                        style={{
-                            flex: 1, padding: '10px 14px', borderRadius: '8px', 
-                            background: 'var(--bg-0)', border: '1px solid var(--border)', 
-                            color: 'var(--text)', fontFamily: 'Inter', fontSize: '13px'
-                        }} 
-                    />
-                    <button className="btn btn-p" onClick={handleJoin} style={{ padding: '10px 20px' }}>Join</button>
+        <section className="sec connect-page" id="sec-connect">
+            <div className="page-hero">
+                <div>
+                    <p className="eyebrow">connect</p>
+                    <h1 className="stitle">Connect guide</h1>
+                    <p className="hero-copy">
+                        Cleaner instructions for joining another server or adding more devices to this one.
+                    </p>
                 </div>
             </div>
 
-            <div className="conn-card">
-                <h3>🖥️ Your Server</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-m)', marginBottom: '12px' }}>
-                    Your server is accessible at:
-                </p>
-                <div id="ipList">
+            <div className="connect-grid">
+                <article className="conn-card join-card">
+                    <p className="eyebrow">join a network</p>
+                    <h2 className="card-title">Point this app at another server</h2>
+                    <p className="connect-copy">
+                        Paste a server address and this board will switch over to that cluster.
+                    </p>
+                    <div className="join-row">
+                        <input
+                            type="text"
+                            value={joinIp}
+                            onChange={(event) => setJoinIp(event.target.value)}
+                            placeholder="http://192.168.1.X:3000"
+                        />
+                        <button className="btn btn-p" onClick={handleJoin}>Join room</button>
+                    </div>
+                </article>
+
+                <article className="conn-card server-card">
+                    <p className="eyebrow">your server</p>
+                    <h2 className="card-title">Share this address with others</h2>
                     {loading ? (
-                        <p className="empty">Loading network info...</p>
+                        <div className="loading-card">
+                            <span className="spark-loader" aria-hidden="true">
+                                <span></span>
+                                <span></span>
+                                <span></span>
+                            </span>
+                            <span>Looking for network addresses...</span>
+                        </div>
                     ) : !networkInfo || networkInfo.addresses.length === 0 ? (
-                        <p className="empty">No network interfaces found</p>
+                        <p className="empty">No network interfaces found.</p>
                     ) : (
-                        networkInfo.addresses.map((a, idx) => (
-                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
-                                <span style={{ color: 'var(--text-m)', fontSize: '12px' }}>{a.name}</span>
-                                <span className="ip-val">{a.address}:{networkInfo.port}</span>
-                            </div>
-                        ))
+                        <div className="address-list" id="ipList">
+                            {networkInfo.addresses.map((address) => (
+                                <div className="address-row" key={`${address.name}-${address.address}`}>
+                                    <span>{address.name}</span>
+                                    <strong>{address.address}:{networkInfo.port}</strong>
+                                </div>
+                            ))}
+                        </div>
                     )}
-                </div>
-            </div>
+                </article>
 
-            <div className="conn-card">
-                <h3>📡 Connect Another Computer</h3>
-                <div className="conn-step">
-                    <div className="conn-num">1</div>
-                    <div className="conn-text"><strong>Install Node.js</strong> on the remote machine from <a href="https://nodejs.org" style={{ color: 'var(--accent)' }}>nodejs.org</a></div>
-                </div>
-                <div className="conn-step">
-                    <div className="conn-num">2</div>
-                    <div className="conn-text"><strong>Copy these files</strong> to the remote machine: <code style={{ color: 'var(--accent)' }}>worker.js</code> and <code style={{ color: 'var(--accent)' }}>package.json</code>, then run <code style={{ color: 'var(--accent)' }}>npm install</code></div>
-                </div>
-                <div className="conn-step">
-                    <div className="conn-num">3</div>
-                    <div className="conn-text"><strong>Run the worker</strong> with your server's IP address:</div>
-                </div>
-                {networkInfo?.addresses?.[0] && (
+                <article className="conn-card steps-card">
+                    <p className="eyebrow">remote worker setup</p>
+                    <h2 className="card-title">Bring another computer into the cloud</h2>
+                    <div className="step-list">
+                        <div className="conn-step">
+                            <div className="conn-num">1</div>
+                            <div className="conn-text">
+                                Install <strong>Node.js</strong> on the remote machine from <a href="https://nodejs.org">nodejs.org</a>.
+                            </div>
+                        </div>
+                        <div className="conn-step">
+                            <div className="conn-num">2</div>
+                            <div className="conn-text">
+                                Copy <code>worker.js</code> and <code>package.json</code>, then run <code>npm install</code>.
+                            </div>
+                        </div>
+                        <div className="conn-step">
+                            <div className="conn-num">3</div>
+                            <div className="conn-text">
+                                Start the worker with your server address.
+                            </div>
+                        </div>
+                    </div>
+
+                    {workerCommand && (
+                        <div className="cmd-box">
+                            <span>{workerCommand}</span>
+                            <button className="copy" onClick={() => copyText(workerCommand)}>copy</button>
+                        </div>
+                    )}
+
+                    <div className="conn-step">
+                        <div className="conn-num">4</div>
+                        <div className="conn-text">
+                            Allow Node.js through your firewall so task offers can reach the device.
+                        </div>
+                    </div>
+                </article>
+
+                <article className="conn-card internet-card">
+                    <p className="eyebrow">internet option</p>
+                    <h2 className="card-title">Share outside your local network</h2>
+                    <p className="connect-copy">
+                        Use port forwarding for port 3000 or tunnel the app with a tool like this:
+                    </p>
                     <div className="cmd-box">
-                        <span>set SERVER_URL=http://{networkInfo.addresses[0].address}:{networkInfo.port} && node worker.js</span>
-                        <button className="copy" onClick={() => copyText(`set SERVER_URL=http://${networkInfo.addresses[0].address}:${networkInfo.port} && node worker.js`)}>📋</button>
-                    </div>
-                )}
-                <div className="conn-step" style={{ marginTop: '16px' }}>
-                    <div className="conn-num">4</div>
-                    <div className="conn-text"><strong>Allow through firewall:</strong> On Windows, allow Node.js in Windows Defender Firewall for private networks</div>
-                </div>
-            </div>
-
-            <div className="conn-card">
-                <h3>🌍 Over the Internet</h3>
-                <div className="conn-text" style={{ fontSize: '13px' }}>
-                    For internet access, use <strong>port forwarding</strong> on your router (forward port 3000) or use a tunnel like:<br />
-                    <div className="cmd-box" style={{ marginTop: '8px' }}>
                         <span>npx localtunnel --port 3000</span>
-                        <button className="copy" onClick={() => copyText('npx localtunnel --port 3000')}>📋</button>
+                        <button className="copy" onClick={() => copyText('npx localtunnel --port 3000')}>copy</button>
                     </div>
-                </div>
+                </article>
             </div>
         </section>
     );

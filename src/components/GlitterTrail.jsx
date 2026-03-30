@@ -3,14 +3,14 @@ import React, { useEffect, useRef } from 'react';
 const GlitterTrail = ({ theme }) => {
     const canvasRef = useRef(null);
     const particles = useRef([]);
-    
-    // Update colors to include Coquette pastels, crisp whites, and gold
-    const colors = ['#FF8DA1', '#FFC2BA', '#FF9CE9', '#AD56C4', '#FFFFFF', '#DCAE96'];
 
     useEffect(() => {
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         let animationFrameId;
+        const colors = theme === 'coquette'
+            ? ['#FF8DA1', '#FFC2BA', '#FF9CE9', '#FFFFFF', '#FCE7EF', '#DCAE96']
+            : ['#D1D0D0', '#988686', '#FFFFFF', '#5C4E4E'];
 
         const handleResize = () => {
             canvas.width = window.innerWidth;
@@ -18,25 +18,28 @@ const GlitterTrail = ({ theme }) => {
         };
 
         const createParticle = (x, y) => {
-            const size = Math.random() * 3 + 1.5; // Slightly smaller, delicate chunks
+            const isCoquette = theme === 'coquette';
+            const size = Math.random() * (isCoquette ? 3.1 : 2.8) + (isCoquette ? 1.6 : 1.2);
             return {
                 x,
                 y,
                 size,
                 color: colors[Math.floor(Math.random() * colors.length)],
-                vx: (Math.random() - 0.5) * 2.5, // Softer horizontal spread
-                vy: (Math.random() - 0.5) * 2.5 - 0.5, // Gentle upward bump before dropping
-                gravity: 0.1, // Softer drop speed
+                vx: (Math.random() - 0.5) * (isCoquette ? 3.4 : 2.6),
+                vy: (Math.random() - 0.5) * (isCoquette ? 3.1 : 2.3) - (isCoquette ? 0.9 : 0.4),
+                gravity: isCoquette ? 0.08 : 0.1,
                 opacity: 1,
-                shrink: 0.96, // Fade out normally
+                shrink: isCoquette ? 0.972 : 0.96,
                 rotation: Math.random() * Math.PI * 2,
-                rotationSpeed: (Math.random() - 0.5) * 0.2
+                rotationSpeed: (Math.random() - 0.5) * 0.2,
+                kind: isCoquette && Math.random() > 0.4 ? 'star' : 'diamond'
             };
         };
 
         const handleMouseMove = (e) => {
-            // Spawn a conservative amount of particles for a subtle, elegant drop
-            for (let i = 0; i < 4; i++) {
+            const spawnCount = theme === 'coquette' ? 5 : 4;
+
+            for (let i = 0; i < spawnCount; i++) {
                 particles.current.push(createParticle(e.clientX, e.clientY));
             }
         };
@@ -51,7 +54,7 @@ const GlitterTrail = ({ theme }) => {
                 p.y += p.vy;
                 p.vy += p.gravity;
                 p.opacity *= p.shrink;
-                p.size *= (p.shrink + (Math.random() * 0.04 - 0.02)); // Twinkle effect
+                p.size *= (p.shrink + (Math.random() * 0.04 - 0.02));
                 p.rotation += p.rotationSpeed;
 
                 ctx.save();
@@ -59,15 +62,32 @@ const GlitterTrail = ({ theme }) => {
                 ctx.rotate(p.rotation);
                 ctx.globalAlpha = p.opacity;
                 ctx.fillStyle = p.color;
-                
-                // Draw a small diamond/sparkle shape
+
                 ctx.beginPath();
-                ctx.moveTo(0, -p.size);
-                ctx.lineTo(p.size / 2, 0);
-                ctx.lineTo(0, p.size);
-                ctx.lineTo(-p.size / 2, 0);
+                if (p.kind === 'star') {
+                    ctx.moveTo(0, -p.size * 1.25);
+                    ctx.lineTo(p.size * 0.34, -p.size * 0.34);
+                    ctx.lineTo(p.size * 1.25, 0);
+                    ctx.lineTo(p.size * 0.34, p.size * 0.34);
+                    ctx.lineTo(0, p.size * 1.25);
+                    ctx.lineTo(-p.size * 0.34, p.size * 0.34);
+                    ctx.lineTo(-p.size * 1.25, 0);
+                    ctx.lineTo(-p.size * 0.34, -p.size * 0.34);
+                } else {
+                    ctx.moveTo(0, -p.size);
+                    ctx.lineTo(p.size / 2, 0);
+                    ctx.lineTo(0, p.size);
+                    ctx.lineTo(-p.size / 2, 0);
+                }
                 ctx.closePath();
                 ctx.fill();
+
+                if (theme === 'coquette') {
+                    ctx.globalAlpha = p.opacity * 0.22;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, p.size * 1.7, 0, Math.PI * 2);
+                    ctx.fill();
+                }
                 
                 ctx.restore();
 
@@ -101,7 +121,7 @@ const GlitterTrail = ({ theme }) => {
                 left: 0,
                 pointerEvents: 'none',
                 zIndex: 9999,
-                opacity: theme === 'coquette' ? 1 : 0.6 // Fuller effect in coquette
+                opacity: theme === 'coquette' ? 0.9 : 0.6
             }}
         />
     );
