@@ -142,10 +142,16 @@ ipcMain.handle('toggle-worker', (event, start, serverUrl) => {
             workerProcess = null;
             if (mainWindow) mainWindow.webContents.send('worker-status', false);
         });
+        if (mainWindow) mainWindow.webContents.send('worker-status', true);
         return { status: 'started' };
     } else if (!start && workerProcess) {
-        workerProcess.kill();
-        workerProcess = null;
+        const proc = workerProcess;
+        proc.send({ type: 'SHUTDOWN' });
+        setTimeout(() => {
+            if (workerProcess === proc) {
+                proc.kill();
+            }
+        }, 2500);
         return { status: 'stopped' };
     }
     return { status: start ? 'already-running' : 'already-stopped' };

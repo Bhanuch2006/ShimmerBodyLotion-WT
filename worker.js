@@ -5,6 +5,7 @@ const { exec, execSync } = require('child_process');
 const path = require('path');
 const axios = require('axios');
 const os = require('os');
+const archiver = require('archiver');
 
 const app = express();
 app.use(express.json());
@@ -55,6 +56,12 @@ let registered = false;
 let activeJobOffer = null;
 const locallySubmittedJobIds = new Set();
 
+function sendStatus(text) {
+    if (typeof process.send === 'function' && process.connected) {
+        process.send({ type: 'STATUS', text });
+    }
+}
+
 function getOfferPayload(job) {
     return {
         jobId: job.jobId,
@@ -95,6 +102,11 @@ function requestJobApproval(job) {
 }
 
 process.on('message', (msg = {}) => {
+    if (msg.type === 'SHUTDOWN') {
+        gracefulShutdown();
+        return;
+    }
+
     if (msg.type === 'SUBMITTED_JOB' && msg.jobId) {
         locallySubmittedJobIds.add(msg.jobId);
         return;
@@ -152,6 +164,22 @@ async function sendHeartbeat() {
     } catch {}
 }
 
+async function disconnectWorker() {
+    if (!registered || !workerUrl) return;
+    try {
+        await axios.post(`${SERVER_URL}/disconnect-worker`, { workerUrl });
+    } catch {}
+}
+
+let shuttingDown = false;
+async function gracefulShutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    sendStatus('Worker shutting down...');
+    await disconnectWorker();
+    process.exit(0);
+}
+
 // ==================== POLL ====================
 async function pollForJob() {
     if (!registered || isExecuting || activeJobOffer || !workerUrl) return;
@@ -166,19 +194,30 @@ async function pollForJob() {
         if (job) {
             if (locallySubmittedJobIds.has(job.jobId)) {
                 console.log(`⛔ Ignoring self-submitted job: ${job.jobId}`);
-                await axios.post(`${SERVER_URL}/job-update`, {
-                    jobId: job.jobId,
-                    status: 'rejected',
-                    workerUrl
-                });
+                sendStatus(`Self-assignment blocked for ${job.jobId.substring(0, 8)}...`);
+                try {
+                    await axios.post(`${SERVER_URL}/job-skip`, {
+                        jobId: job.jobId,
+                        workerUrl,
+                        reason: 'self-submitted'
+                    });
+                } catch {
+                    await axios.post(`${SERVER_URL}/job-update`, {
+                        jobId: job.jobId,
+                        status: 'rejected',
+                        workerUrl
+                    });
+                }
                 return;
             }
 
             console.log(`📋 Job offer received: ${job.jobId}`);
+            sendStatus(`Job offer received: ${job.jobId.substring(0, 8)}...`);
             const approved = await requestJobApproval(job);
 
             if (!approved) {
                 console.log(`🛑 Job rejected by user: ${job.jobId}`);
+                sendStatus(`Job rejected: ${job.jobId.substring(0, 8)}...`);
                 await axios.post(`${SERVER_URL}/job-update`, {
                     jobId: job.jobId,
                     status: 'rejected',
@@ -188,9 +227,12 @@ async function pollForJob() {
             }
 
             console.log(`✅ Job accepted by user: ${job.jobId}`);
+            sendStatus(`Job accepted: ${job.jobId.substring(0, 8)}...`);
             handleJob(job);
         }
-    } catch (err) {}
+    } catch (err) {
+        console.warn('⚠️ Poll error:', err.message);
+    }
 }
 
 // ==================== DOWNLOAD ====================
@@ -211,7 +253,7 @@ async function downloadFile(url, outputPath) {
 
 function runCommand(command, options = {}) {
     return new Promise((resolve, reject) => {
-        exec(command, options, (err, stdout, stderr) => {
+        exec(command, { maxBuffer: 20 * 1024 * 1024, ...options }, (err, stdout, stderr) => {
             if (err) {
                 err.stdout = stdout;
                 err.stderr = stderr;
@@ -222,7 +264,7 @@ function runCommand(command, options = {}) {
     });
 }
 
-async function runPythonWithFallback(scriptPath, cwd) {
+async function runPythonWithFallback(scriptPath, cwd, extraEnv = {}) {
     const candidates = [
         process.env.PYTHON_BIN,
         'python',
@@ -234,7 +276,11 @@ async function runPythonWithFallback(scriptPath, cwd) {
     for (const candidate of candidates) {
         try {
             const command = `${candidate} "${scriptPath}"`;
-            const result = await runCommand(command, { cwd, timeout: 120000 });
+            const result = await runCommand(command, {
+                cwd,
+                timeout: 120000,
+                env: { ...process.env, ...extraEnv }
+            });
             return { ...result, command: candidate };
         } catch (err) {
             lastError = err;
@@ -246,6 +292,79 @@ async function runPythonWithFallback(scriptPath, cwd) {
     const failure = new Error('No working Python command found. Set PYTHON_BIN in .env if needed.');
     failure.cause = lastError;
     throw failure;
+}
+
+async function runJobInDocker(jobsPath, mainFile, outputDir) {
+    const command = [
+        'docker run --rm',
+        `-v "${jobsPath}:/workspace"`,
+        `-v "${outputDir}:/workspace/output"`,
+        '-w /workspace',
+        '-e OUTPUT_DIR=/workspace/output',
+        'python:3.10-slim',
+        `sh -c "python /workspace/${mainFile}"`
+    ].join(' ');
+
+    return runCommand(command, { cwd: jobsPath, timeout: 300000 });
+}
+
+function ensureCleanDir(dirPath) {
+    fs.rmSync(dirPath, { recursive: true, force: true });
+    fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function listFilesRecursive(rootDir) {
+    if (!fs.existsSync(rootDir)) return [];
+    const results = [];
+
+    function walk(currentDir) {
+        const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(currentDir, entry.name);
+            if (entry.isDirectory()) {
+                walk(fullPath);
+            } else {
+                const rel = path.relative(rootDir, fullPath).replace(/\\/g, '/');
+                results.push(rel);
+            }
+        }
+    }
+
+    walk(rootDir);
+    return results;
+}
+
+function createZipFromDirectory(sourceDir, zipPath) {
+    return new Promise((resolve, reject) => {
+        const output = fs.createWriteStream(zipPath);
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        output.on('close', resolve);
+        output.on('error', reject);
+        archive.on('error', reject);
+
+        archive.pipe(output);
+        archive.directory(sourceDir, false);
+        archive.finalize();
+    });
+}
+
+async function uploadOutputZip(serverUrl, jobId, zipPath) {
+    const form = new FormData();
+    form.append('task_id', jobId);
+    form.append('file', new Blob([fs.readFileSync(zipPath)]), 'output.zip');
+
+    const resp = await fetch(`${serverUrl}/upload-output`, {
+        method: 'POST',
+        body: form
+    });
+
+    if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`Output upload failed: ${resp.status} ${body}`);
+    }
+
+    return resp.json();
 }
 
 // ==================== JOB ====================
@@ -263,6 +382,8 @@ async function handleJob(job) {
 
         const jobsPath = path.join(__dirname, 'jobs');
         if (!fs.existsSync(jobsPath)) fs.mkdirSync(jobsPath);
+        const outputDir = path.join(jobsPath, 'output', jobId);
+        ensureCleanDir(outputDir);
 
         let mainFile = '';
         const downloadedFiles = [];
@@ -300,15 +421,64 @@ async function handleJob(job) {
         }
 
         try {
-            const { stdout, command } = await runPythonWithFallback(scriptPath, jobsPath);
+            let stdout = '';
+            let stderr = '';
+            let command = '';
+
+            try {
+                if (capabilities.dockerAvailable) {
+                    const dockerRun = await runJobInDocker(jobsPath, mainFile, outputDir);
+                    stdout = dockerRun.stdout || '';
+                    stderr = dockerRun.stderr || '';
+                    command = 'docker';
+                } else {
+                    throw new Error('Docker unavailable on worker');
+                }
+            } catch (dockerErr) {
+                console.warn(`⚠️ Docker execution failed, falling back to local python: ${dockerErr.message}`);
+                const localRun = await runPythonWithFallback(scriptPath, jobsPath, { OUTPUT_DIR: outputDir });
+                stdout = localRun.stdout || '';
+                stderr = localRun.stderr || '';
+                command = localRun.command;
+            }
+
+            const logsPath = path.join(outputDir, 'logs.txt');
+            const executionLog = [
+                `jobId: ${jobId}`,
+                `runner: ${command}`,
+                '',
+                '=== STDOUT ===',
+                stdout,
+                '',
+                '=== STDERR ===',
+                stderr
+            ].join('\n');
+            fs.writeFileSync(logsPath, executionLog, 'utf8');
+
+            const outputFiles = listFilesRecursive(outputDir);
+            const modelExts = new Set(['.pt', '.pth', '.pkl', '.h5', '.joblib', '.onnx']);
+            const modelFiles = outputFiles.filter((f) => modelExts.has(path.extname(f).toLowerCase()));
+            const outputWarning = modelFiles.length === 0 ? 'No model file generated' : null;
+
+            const zipPath = path.join(jobsPath, `${jobId}-output.zip`);
+            await createZipFromDirectory(outputDir, zipPath);
+            const uploadRes = await uploadOutputZip(SERVER, jobId, zipPath);
+
             console.log(`✅ Job done (using: ${command})`);
 
             await axios.post(`${SERVER}/job-update`, {
                 jobId,
                 status: 'completed',
                 result: stdout,
+                output_file_url: uploadRes.output_file_url,
+                output_warning: outputWarning,
+                output_files: outputFiles,
                 workerUrl
             });
+
+            if (fs.existsSync(zipPath)) {
+                fs.unlinkSync(zipPath);
+            }
         } catch (err) {
             const detail = err?.cause?.stderr || err?.cause?.message || err.message;
             console.error('❌ Execution error:', detail);
@@ -325,6 +495,7 @@ async function handleJob(job) {
                 const fp = path.join(jobsPath, f);
                 if (fs.existsSync(fp)) fs.unlinkSync(fp);
             }
+            fs.rmSync(outputDir, { recursive: true, force: true });
 
             isExecuting = false;
         }
@@ -362,3 +533,6 @@ app.listen(PORT, async () => {
 
     registerWorker();
 });
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);

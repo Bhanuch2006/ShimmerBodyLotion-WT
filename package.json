@@ -22,6 +22,7 @@
   "type": "commonjs",
   "dependencies": {
     "@ngrok/ngrok": "^1.7.0",
+    "archiver": "^7.0.1",
     "axios": "^1.14.0",
     "cloudinary": "^2.9.0",
     "cors": "^2.8.6",
