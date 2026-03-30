@@ -62,14 +62,18 @@ const baseRegistrationDelay = 3000;
 async function registerWorker() {
     if (!workerUrl) {
         console.warn('⚠️ No workerUrl yet (ngrok not ready). Retrying in 3s...');
+        if (process.send) process.send({ type: 'STATUS', text: 'Waiting for network tunnel...' });
         setTimeout(registerWorker, 3000);
         return;
     }
 
     try {
+        if (process.send) process.send({ type: 'STATUS', text: 'Registering with central server...' });
         const res = await axios.post(`${SERVER_URL}/register`, { workerUrl, capabilities });
         console.log('✅ Registered | Trust:', res.data.trustScore, '| Credits:', res.data.credits);
         console.log(`   Public URL: ${workerUrl}`);
+
+        if (process.send) process.send({ type: 'STATUS', text: `Registered & Ready! (${workerUrl.substring(0, 20)}...)` });
 
         registrationAttempts = 0;
         registered = true;
@@ -330,6 +334,7 @@ const httpServer = app.listen(PORT, '0.0.0.0', async () => {
     if (NGROK_AUTHTOKEN) {
         try {
             console.log('🔗 Starting ngrok tunnel...');
+            if (process.send) process.send({ type: 'STATUS', text: 'Starting ngrok tunnel...' });
             const ngrok = require('@ngrok/ngrok');
 
             const listener = await ngrok.forward({
@@ -339,15 +344,18 @@ const httpServer = app.listen(PORT, '0.0.0.0', async () => {
 
             workerUrl = listener.url();
             console.log(`✅ ngrok tunnel active: ${workerUrl}`);
+            if (process.send) process.send({ type: 'STATUS', text: 'Ngrok tunnel active!' });
             console.log(`   Mode: Pull-based polling (interactive via Electron UI)`);
 
         } catch (err) {
             console.error('❌ ngrok failed:', err.message);
+            if (process.send) process.send({ type: 'STATUS', text: `Ngrok failed: ${err.message.substring(0, 30)}...` });
             workerUrl = process.env.WORKER_URL || `http://localhost:${PORT}`;
         }
     } else {
         workerUrl = process.env.WORKER_URL || `http://localhost:${PORT}`;
         console.warn('⚠️ No NGROK_AUTHTOKEN set. Using:', workerUrl);
+        if (process.send) process.send({ type: 'STATUS', text: 'Running on local network (no ngrok)' });
     }
 
     await registerWorker();
