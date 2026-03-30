@@ -52,6 +52,7 @@ console.log('🖥️ Capabilities:', JSON.stringify(capabilities, null, 2));
 // ==================== STATE ====================
 let isExecuting = false;
 let registered = false;
+let activeJobOffer = null;
 
 // ==================== REGISTRATION & HEARTBEAT ====================
 let registrationAttempts = 0;
@@ -116,15 +117,15 @@ setInterval(() => {
 
 // ==================== POLL FOR JOBS ====================
 async function pollForJob() {
-    if (!registered || isExecuting || !workerUrl) return;
+    if (!registered || isExecuting || activeJobOffer || !workerUrl) return;
 
     try {
         const res = await axios.post(`${SERVER_URL}/poll-job`, { workerUrl }, { timeout: 10000 });
         const { job } = res.data;
 
         if (job) {
-            console.log(`📋 Job received via poll: ${job.jobId}`);
-            executeJob(job.jobId, job.files, job.serverUrl);
+            console.log(`📋 Job offered via poll: ${job.jobId}`);
+            handleJobOffer(job.jobId, job.files, job.serverUrl, job.description, job.resources_required);
         }
     } catch (err) {
         if (err.code !== 'ECONNREFUSED' && err.response?.status !== 404) {
@@ -152,68 +153,55 @@ function isDockerRunning() {
     } catch { return false; }
 }
 
-// ==================== JOB EXECUTION ====================
+// ==================== JOB HANDLING ====================
 app.get('/', (req, res) => res.json({ status: 'worker running', port: PORT, publicUrl: workerUrl, capabilities }));
 
-<<<<<<< HEAD
-// Keep /execute endpoint as fallback for direct dispatch
-app.post('/execute', async (req, res) => {
-    const { jobId, files, serverUrl } = req.body;
-    res.json({ status: 'accepted', jobId });
-    executeJob(jobId, files, serverUrl);
-});
-=======
-let activeJobOffer = null;
-
+// Keep /offer endpoint from MehulShaunak (legacy/push dispatch)
 app.post('/offer', async (req, res) => {
     const { jobId, files, description, resources, serverUrl } = req.body;
     res.json({ status: 'offered', jobId });
->>>>>>> MehulShaunak
+    handleJobOffer(jobId, files, serverUrl, description, resources);
+});
 
-async function executeJob(jobId, files, serverUrl) {
-    if (isExecuting) {
-        console.warn('⚠️ Already executing a job, skipping:', jobId);
+async function handleJobOffer(jobId, files, serverUrl, description = '', resources = {}) {
+    if (isExecuting || activeJobOffer) {
+        console.warn('⚠️ Busy, ignoring job offer:', jobId);
         return;
     }
 
-    isExecuting = true;
     const SERVER = serverUrl || SERVER_URL;
     activeJobOffer = { jobId, files, serverUrl: SERVER, description, resources };
 
-<<<<<<< HEAD
-    console.log(`📋 Executing job: ${jobId}`);
-    console.log(`   Server URL: ${SERVER}`);
-    console.log(`   Files to download: ${files.length}`);
-=======
     console.log('📬 Received job offer:', jobId);
->>>>>>> MehulShaunak
 
     if (process.send) {
+        // Send to Main process to show popup
         process.send({ 
             type: 'JOB_OFFER', 
             data: activeJobOffer
         });
     } else {
         console.log('⚠️ No IPC parent found, auto-accepting job (headless mode)');
-        executeJob(jobId, files, SERVER);
+        startJobExecution(jobId, files, SERVER);
     }
-});
+}
 
-// Listen for IPC messages from Electron Main Process
+// Listen for IPC messages from Electron Main Process (Accept/Reject button clicks)
 process.on('message', async (msg) => {
     if (msg.type === 'JOB_ACCEPTED' && activeJobOffer?.jobId === msg.jobId) {
         console.log('✅ Job accepted by local contributor:', msg.jobId);
         const { jobId, files, serverUrl } = activeJobOffer;
         activeJobOffer = null;
-        executeJob(jobId, files, serverUrl);
+        startJobExecution(jobId, files, serverUrl);
     } 
     else if (msg.type === 'JOB_REJECTED' && activeJobOffer?.jobId === msg.jobId) {
         console.log('❌ Job rejected by local contributor:', msg.jobId);
         const SERVER = activeJobOffer.serverUrl;
+        const jobId = activeJobOffer.jobId;
         activeJobOffer = null;
         try {
             await axios.post(`${SERVER}/job-update`, {
-                jobId: msg.jobId,
+                jobId: jobId,
                 status: 'rejected',
                 workerUrl
             });
@@ -223,7 +211,12 @@ process.on('message', async (msg) => {
     }
 });
 
-async function executeJob(jobId, files, SERVER) {
+async function startJobExecution(jobId, files, SERVER) {
+    if (isExecuting) return;
+    isExecuting = true;
+
+    console.log(`📋 Executing job: ${jobId}`);
+    
     try {
         await axios.post(`${SERVER}/job-update`, { jobId, status: 'running', workerUrl });
 
@@ -245,23 +238,15 @@ async function executeJob(jobId, files, SERVER) {
             }
 
             const localPath = path.join(jobsPath, fileName);
-<<<<<<< HEAD
-            const downloadUrl = `${SERVER}/${cleanPath}`;
-            console.log(`⬇️ Downloading: ${downloadUrl}`);
-
+            console.log(`⬇️ Downloading: ${cleanPath} -> ${fileName}`);
+            
             try {
-                await downloadFile(downloadUrl, localPath);
-                console.log(`   ✅ Downloaded: ${fileName}`);
+                await downloadFile(`${SERVER}/${cleanPath}`, localPath);
+                downloadedFiles.push(fileName);
             } catch (downloadErr) {
                 console.error(`   ❌ Download failed: ${downloadErr.message}`);
                 throw downloadErr;
             }
-
-=======
-            console.log('⬇️ Downloading:', cleanPath, '->', fileName);
-            await downloadFile(`${SERVER}/${cleanPath}`, localPath);
->>>>>>> MehulShaunak
-            downloadedFiles.push(fileName);
         }
 
         if (!mainFile) throw new Error('No Python script found in uploaded files');
@@ -336,14 +321,12 @@ process.on('SIGTERM', async () => { await unregisterWorker(); process.exit(0); }
 process.on('SIGINT', async () => { await unregisterWorker(); process.exit(0); });
 
 // ==================== START ====================
-// Step 1: Start Express server
 const httpServer = app.listen(PORT, '0.0.0.0', async () => {
     console.log(`🚀 Worker HTTP server listening on port ${PORT}`);
     console.log(`   Server: ${SERVER_URL}`);
     console.log(`   Docker: ${capabilities.dockerAvailable ? '✅' : '❌'}`);
     console.log(`   GPU: ${capabilities.gpuAvailable ? capabilities.gpuModel : '❌'}`);
 
-    // Step 2: Create ngrok tunnel if auth token is available
     if (NGROK_AUTHTOKEN) {
         try {
             console.log('🔗 Starting ngrok tunnel...');
@@ -356,21 +339,16 @@ const httpServer = app.listen(PORT, '0.0.0.0', async () => {
 
             workerUrl = listener.url();
             console.log(`✅ ngrok tunnel active: ${workerUrl}`);
-            console.log(`   Mode: Pull-based polling every 5s`);
+            console.log(`   Mode: Pull-based polling (interactive via Electron UI)`);
 
         } catch (err) {
             console.error('❌ ngrok failed:', err.message);
-            console.warn('⚠️ Falling back to localhost URL (worker may not be reachable remotely)');
             workerUrl = process.env.WORKER_URL || `http://localhost:${PORT}`;
         }
     } else {
-        // No ngrok token — use explicit URL or localhost fallback
         workerUrl = process.env.WORKER_URL || `http://localhost:${PORT}`;
         console.warn('⚠️ No NGROK_AUTHTOKEN set. Using:', workerUrl);
-        console.warn('   Workers on different machines will share the same URL key!');
-        console.warn('   Add NGROK_AUTHTOKEN to .env to fix this.');
     }
 
-    // Step 3: Register with central server
     await registerWorker();
 });

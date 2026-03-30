@@ -4,10 +4,9 @@
   "description": "Decentralized Idle Compute Sharing Platform for AI & Research Workloads",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "concurrently \"npm run vite\" \"npm run electron\"",
+    "start": "npm run dev",
+    "dev": "start cmd /k npx vite && node wait-and-launch.js",
     "vite": "vite",
-    "electron": "wait-on http://localhost:5173 && electron .",
     "server": "node server.js",
     "worker": "node worker.js",
     "build": "vite build",
