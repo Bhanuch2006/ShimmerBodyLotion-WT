@@ -8,10 +8,10 @@ const Workers = () => {
 
     return (
         <section className="sec on" id="sec-workers">
-            <h1 className="stitle"><span className="t-ico" data-type="devices"></span> {theme === 'coquette' ? 'Companions' : 'Connected Devices'}</h1>
+            <h1 className="stitle"><span className="t-ico" data-type="devices"></span> Connected Devices</h1>
             <div className="wdgrid" id="wDetail">
                 {workers.length === 0 ? (
-                    <p className="empty">{theme === 'coquette' ? 'No companions registered' : 'No connected devices registered'}</p>
+                    <p className="empty">No connected devices registered</p>
                 ) : (
                     workers.map((w, idx) => {
                         const c = w.capabilities || {};

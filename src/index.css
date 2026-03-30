@@ -9,7 +9,7 @@
     --text: #f8fafc; --text-m: #c4b5fd; --text-d: #8b5cf6;
     --accent: #00e5ff; --accent-rgb: 0,229,255;
     --accent2: #b026ff;
-    --grad: linear-gradient(145deg, #1e1738, #05030a);
+    --grad: linear-gradient(145deg, #ffffff, #8b5cf6);
     --grad2: linear-gradient(135deg, #00e5ff, #b026ff);
     --grad3: linear-gradient(135deg, #10b981, #34d399); 
     --grad4: linear-gradient(135deg, #b026ff, #00e5ff);
@@ -21,6 +21,11 @@
 [data-theme="black"], [data-theme="black"] * {
     font-family: 'Space Grotesk', sans-serif !important;
     cursor: none !important;
+}
+
+[data-theme="black"] ::placeholder {
+    color: var(--text-d);
+    opacity: 0.7;
 }
 
 [data-theme="black"] body {
