@@ -102,42 +102,60 @@ const SubmitJob = () => {
 
         setSubmitting(true);
         try {
+            // First, check if server is reachable
+            console.log(`[SubmitJob] Testing connection to ${currentUrl}/api/health...`);
+            try {
+                const healthCheck = await axios.get(`${currentUrl}/api/health`, { timeout: 5000 });
+                console.log('[SubmitJob] ✅ Server is healthy:', healthCheck.data);
+            } catch (healthErr) {
+                console.warn('[SubmitJob] ⚠️ Server health check failed:', healthErr.message);
+                console.warn('[SubmitJob] Continuing anyway...');
+            }
+
             const fd = new FormData();
             files.forEach(f => fd.append('files', f));
 
-            console.log(`[SubmitJob] Submitting to server: ${currentUrl}`);
-            console.log(`[SubmitJob] Files: ${files.map(f => f.name).join(', ')}`);
-
-            // Upload files to the server
-            console.log(`[SubmitJob] Step 1: Uploading ${files.length} files to ${currentUrl}/upload`);
+            console.log(`[SubmitJob] Uploading ${files.length} files to ${currentUrl}/upload`);
             const uploadRes = await axios.post(`${currentUrl}/upload`, fd, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+                headers: { 'Content-Type': 'multipart/form-data' },
+                timeout: 30000
             });
-            console.log('[SubmitJob] Files uploaded successfully:', uploadRes.data.files);
+            console.log('[SubmitJob] ✅ Files uploaded:', uploadRes.data.files);
 
             // Submit the job
-            console.log(`[SubmitJob] Step 2: Submitting job to ${currentUrl}/submit-job`);
+            console.log(`[SubmitJob] Submitting job to ${currentUrl}/submit-job`);
             await axios.post(`${currentUrl}/submit-job`, {
                 description: description.trim(),
                 files: uploadRes.data.files,
                 resources_required: { ...resources }
-            });
+            }, { timeout: 10000 });
 
-            console.log('[SubmitJob] Job submitted successfully!');
+            console.log('[SubmitJob] ✅ Job submitted successfully!');
             setFiles([]);
             setDescription('');
             navigate('/');
         } catch (error) {
             const errorMsg = error.response?.data?.error || error.message;
             const statusCode = error.response?.status;
-            console.error('[SubmitJob] Error:', {
+            
+            let detailedError = errorMsg;
+            if (error.code === 'ECONNABORTED') {
+                detailedError = 'Request timeout - server is not responding';
+            } else if (error.code === 'ENOTFOUND') {
+                detailedError = 'Server domain not found - check the URL';
+            } else if (error.message === 'Network Error') {
+                detailedError = 'Network error - check your internet connection and firewall settings';
+            }
+            
+            console.error('[SubmitJob] ❌ Error:', {
                 message: errorMsg,
                 status: statusCode,
                 url: currentUrl,
+                code: error.code,
                 error: error
             });
             
-            alert(`Error submitting job (${statusCode || 'network error'})\n\nServer: ${currentUrl}\nError: ${errorMsg}`);
+            alert(`Error submitting job (${statusCode || 'network error'})\n\nServer: ${currentUrl}\nError: ${detailedError}\n\nCheck the browser console (F12) for more details.`);
         } finally {
             setSubmitting(false);
         }

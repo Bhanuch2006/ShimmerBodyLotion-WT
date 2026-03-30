@@ -10,8 +10,8 @@ export const useSocket = () => {
 export const SocketProvider = ({ children }) => {
     const [socket, setSocket] = useState(null);
     const [connected, setConnected] = useState(false);
-    // Start with localhost - this is the default for dev/Electron
-    const [currentUrl, setCurrentUrl] = useState('http://localhost:3000');
+    // Default to Render production URL - will be overridden by Electron config if available
+    const [currentUrl, setCurrentUrl] = useState('https://shimmerbodylotion-wt.onrender.com');
     
     // Global state arrays updated directly by socket events
     const [workers, setWorkers] = useState([]);
@@ -20,21 +20,21 @@ export const SocketProvider = ({ children }) => {
     useEffect(() => {
         // Try to get server URL from Electron config on mount
         if (window.electronAPI?.getServerUrl) {
-            console.log('[SocketContext] Getting server URL from Electron...');
+            console.log('[SocketContext] Requesting server URL from Electron...');
             window.electronAPI.getServerUrl()
                 .then(url => {
                     if (url) {
-                        console.log(`[SocketContext] Loaded server URL: ${url}`);
+                        console.log(`[SocketContext] ✅ Loaded server URL from Electron config: ${url}`);
                         setCurrentUrl(url);
                     } else {
-                        console.log('[SocketContext] No URL from Electron, using default: http://localhost:3000');
+                        console.log('[SocketContext] No URL from config, using default Render: https://shimmerbodylotion-wt.onrender.com');
                     }
                 })
                 .catch(err => {
-                    console.warn('[SocketContext] Failed to get server URL, using default:', err);
+                    console.warn('[SocketContext] Failed to get server URL from Electron, using Render default:', err);
                 });
         } else {
-            console.log('[SocketContext] Not in Electron, using default: http://localhost:3000');
+            console.log('[SocketContext] Not in Electron, using default Render: https://shimmerbodylotion-wt.onrender.com');
         }
     }, []);
     const [stats, setStats] = useState({

@@ -1,6 +1,6 @@
 {
-  "serverUrl": "http://localhost:3000",
-  "workerUrl": null,
+  "serverUrl": "https://shimmerbodylotion-wt.onrender.com",
+  "workerUrl": "https://tugless-hypersystolic-caroll.ngrok-free.dev",
   "description": "Server configuration for SharingIsCaring",
   "instructions": {
     "serverUrl": "For local dev: http://localhost:3000 | For production: https://your-app.onrender.com",
