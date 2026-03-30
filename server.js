@@ -8,6 +8,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
+const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);

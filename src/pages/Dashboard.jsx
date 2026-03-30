@@ -3,7 +3,7 @@ import { useSocket } from '../context/SocketContext';
 import { useTheme } from '../hooks/useTheme';
 
 const Dashboard = () => {
-    const { stats, workers, jobs } = useSocket();
+    const { stats, workers, jobs, currentUrl } = useSocket();
     const theme = useTheme();
     const [isStarting, setIsStarting] = useState(false);
     const [localWorkerRunning, setLocalWorkerRunning] = useState(false);
@@ -29,7 +29,7 @@ const Dashboard = () => {
     const toggleComputeNode = async () => {
         if (!window.electronAPI) return;
         setIsStarting(true);
-        const res = await window.electronAPI.toggleWorker(!localWorkerRunning);
+        const res = await window.electronAPI.toggleWorker(!localWorkerRunning, currentUrl);
         if (res.status === 'stopped') {
             setLocalWorkerRunning(false);
             setWorkerLog('Local node is currently idle.');
