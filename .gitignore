@@ -36,3 +36,5 @@ temp.js
 uploads/
 out/
 dist/
+
+.electron_data/

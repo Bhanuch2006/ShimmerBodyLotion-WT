@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const { exec, execSync } = require('child_process');
@@ -8,9 +9,12 @@ const os = require('os');
 const app = express();
 app.use(express.json());
 
-const PORT = process.env.WORKER_PORT || 4000;
+const PORT = parseInt(process.env.WORKER_PORT) || 4000;
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
-const workerUrl = process.env.WORKER_URL || `http://localhost:${PORT}`;
+const NGROK_AUTHTOKEN = process.env.NGROK_AUTHTOKEN || null;
+
+// workerUrl will be set after ngrok tunnel starts (or fallback to localhost)
+let workerUrl = process.env.WORKER_URL || null;
 
 // ==================== SYSTEM CAPABILITIES ====================
 function getCapabilities() {
@@ -46,38 +50,44 @@ const capabilities = getCapabilities();
 console.log('🖥️ Capabilities:', JSON.stringify(capabilities, null, 2));
 
 // ==================== STATE ====================
-let isExecuting = false;   // true while running a job
-let registered = false;    // true once registered with server
+let isExecuting = false;
+let registered = false;
 
 // ==================== REGISTRATION & HEARTBEAT ====================
 let registrationAttempts = 0;
 const maxRegistrationAttempts = 20;
-const baseRegistrationDelay = 3000; // 3 seconds
+const baseRegistrationDelay = 3000;
 
 async function registerWorker() {
+    if (!workerUrl) {
+        console.warn('⚠️ No workerUrl yet (ngrok not ready). Retrying in 3s...');
+        setTimeout(registerWorker, 3000);
+        return;
+    }
+
     try {
         const res = await axios.post(`${SERVER_URL}/register`, { workerUrl, capabilities });
         console.log('✅ Registered | Trust:', res.data.trustScore, '| Credits:', res.data.credits);
-        
+        console.log(`   Public URL: ${workerUrl}`);
+
         registrationAttempts = 0;
         registered = true;
-        
+
         // Start heartbeats once registered
         if (!global.heartbeatInterval) {
             global.heartbeatInterval = setInterval(sendHeartbeat, 10000);
         }
-        
+
         // Start polling for jobs once registered
         if (!global.pollInterval) {
             global.pollInterval = setInterval(pollForJob, 5000);
-            // Also poll immediately
             setTimeout(pollForJob, 1000);
         }
     } catch (err) {
         registrationAttempts++;
         const delay = Math.min(baseRegistrationDelay * Math.pow(2, Math.floor(registrationAttempts / 3)), 120000);
         console.error(`❌ Registration failed (attempt ${registrationAttempts}/${maxRegistrationAttempts}): ${err.message}`);
-        
+
         if (registrationAttempts < maxRegistrationAttempts) {
             console.log(`   Retrying in ${delay / 1000}s...`);
             setTimeout(registerWorker, delay);
@@ -88,6 +98,7 @@ async function registerWorker() {
 }
 
 async function sendHeartbeat() {
+    if (!workerUrl) return;
     try {
         await axios.post(`${SERVER_URL}/heartbeat`, { workerUrl });
     } catch (err) {
@@ -95,12 +106,9 @@ async function sendHeartbeat() {
     }
 }
 
-// Initial registration
-registerWorker();
-
 // Re-attempt registration every 30 seconds if not yet registered
 setInterval(() => {
-    if (!registered) {
+    if (!registered && workerUrl) {
         console.log('Attempting to re-register...');
         registerWorker();
     }
@@ -108,19 +116,18 @@ setInterval(() => {
 
 // ==================== POLL FOR JOBS ====================
 async function pollForJob() {
-    if (!registered || isExecuting) return;
-    
+    if (!registered || isExecuting || !workerUrl) return;
+
     try {
         const res = await axios.post(`${SERVER_URL}/poll-job`, { workerUrl }, { timeout: 10000 });
         const { job } = res.data;
-        
+
         if (job) {
             console.log(`📋 Job received via poll: ${job.jobId}`);
             executeJob(job.jobId, job.files, job.serverUrl);
         }
     } catch (err) {
-        // Don't spam logs for routine polls that fail
-        if (err.code !== 'ECONNREFUSED') {
+        if (err.code !== 'ECONNREFUSED' && err.response?.status !== 404) {
             console.warn('⚠️ Poll failed:', err.message);
         }
     }
@@ -146,9 +153,9 @@ function isDockerRunning() {
 }
 
 // ==================== JOB EXECUTION ====================
-app.get('/', (req, res) => res.json({ status: 'worker running', port: PORT, capabilities }));
+app.get('/', (req, res) => res.json({ status: 'worker running', port: PORT, publicUrl: workerUrl, capabilities }));
 
-// Keep /execute endpoint as fallback for LAN-mode direct dispatch
+// Keep /execute endpoint as fallback for direct dispatch
 app.post('/execute', async (req, res) => {
     const { jobId, files, serverUrl } = req.body;
     res.json({ status: 'accepted', jobId });
@@ -160,7 +167,7 @@ async function executeJob(jobId, files, serverUrl) {
         console.warn('⚠️ Already executing a job, skipping:', jobId);
         return;
     }
-    
+
     isExecuting = true;
     const SERVER = serverUrl || SERVER_URL;
 
@@ -191,7 +198,7 @@ async function executeJob(jobId, files, serverUrl) {
             const localPath = path.join(jobsPath, fileName);
             const downloadUrl = `${SERVER}/${cleanPath}`;
             console.log(`⬇️ Downloading: ${downloadUrl}`);
-            
+
             try {
                 await downloadFile(downloadUrl, localPath);
                 console.log(`   ✅ Downloaded: ${fileName}`);
@@ -199,7 +206,7 @@ async function executeJob(jobId, files, serverUrl) {
                 console.error(`   ❌ Download failed: ${downloadErr.message}`);
                 throw downloadErr;
             }
-            
+
             downloadedFiles.push(fileName);
         }
 
@@ -207,7 +214,6 @@ async function executeJob(jobId, files, serverUrl) {
 
         console.log('🧠 Executing:', mainFile);
 
-        // Decide: Docker or local
         const useDocker = capabilities.dockerAvailable && isDockerRunning();
         let command;
 
@@ -223,7 +229,6 @@ async function executeJob(jobId, files, serverUrl) {
         }
 
         exec(command, { timeout: 120000, cwd: jobsPath }, async (err, stdout, stderr) => {
-            // Cleanup job files
             try {
                 for (const f of downloadedFiles) {
                     const fp = path.join(jobsPath, f);
@@ -246,12 +251,9 @@ async function executeJob(jobId, files, serverUrl) {
                     result: stdout, workerUrl
                 }).catch(() => {});
             }
-            
-            // Mark worker as idle — ready for next poll
+
             isExecuting = false;
             console.log('🔄 Ready for next job');
-            
-            // Immediately poll for another job
             setTimeout(pollForJob, 1000);
         });
 
@@ -261,7 +263,7 @@ async function executeJob(jobId, files, serverUrl) {
             jobId, status: 'failed',
             error: err.message, workerUrl
         }).catch(() => {});
-        
+
         isExecuting = false;
         console.log('🔄 Ready for next job');
     }
@@ -269,35 +271,52 @@ async function executeJob(jobId, files, serverUrl) {
 
 // ==================== CLEAN DISCONNECT ====================
 async function unregisterWorker() {
+    if (!workerUrl) return;
     try {
         await axios.post(`${SERVER_URL}/unregister`, { workerUrl }, { timeout: 3000 });
         console.log('👋 Unregistered from server');
     } catch {}
 }
 
-// Handle graceful shutdown
 process.on('SIGTERM', async () => { await unregisterWorker(); process.exit(0); });
 process.on('SIGINT', async () => { await unregisterWorker(); process.exit(0); });
-process.on('exit', () => {
-    // Sync request on exit as last resort
-    try {
-        const http = require('http');
-        const url = new URL(`${SERVER_URL}/unregister`);
-        const data = JSON.stringify({ workerUrl });
-        const req = http.request({ hostname: url.hostname, port: url.port, path: url.pathname, method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': data.length }
-        });
-        req.write(data);
-        req.end();
-    } catch {}
-});
 
 // ==================== START ====================
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Worker running at ${workerUrl}`);
+// Step 1: Start Express server
+const httpServer = app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`🚀 Worker HTTP server listening on port ${PORT}`);
     console.log(`   Server: ${SERVER_URL}`);
-    console.log(`   Mode: Pull-based (polls server every 5s)`);
     console.log(`   Docker: ${capabilities.dockerAvailable ? '✅' : '❌'}`);
     console.log(`   GPU: ${capabilities.gpuAvailable ? capabilities.gpuModel : '❌'}`);
-    registerWorker();
+
+    // Step 2: Create ngrok tunnel if auth token is available
+    if (NGROK_AUTHTOKEN) {
+        try {
+            console.log('🔗 Starting ngrok tunnel...');
+            const ngrok = require('@ngrok/ngrok');
+
+            const listener = await ngrok.forward({
+                addr: PORT,
+                authtoken: NGROK_AUTHTOKEN,
+            });
+
+            workerUrl = listener.url();
+            console.log(`✅ ngrok tunnel active: ${workerUrl}`);
+            console.log(`   Mode: Pull-based polling every 5s`);
+
+        } catch (err) {
+            console.error('❌ ngrok failed:', err.message);
+            console.warn('⚠️ Falling back to localhost URL (worker may not be reachable remotely)');
+            workerUrl = process.env.WORKER_URL || `http://localhost:${PORT}`;
+        }
+    } else {
+        // No ngrok token — use explicit URL or localhost fallback
+        workerUrl = process.env.WORKER_URL || `http://localhost:${PORT}`;
+        console.warn('⚠️ No NGROK_AUTHTOKEN set. Using:', workerUrl);
+        console.warn('   Workers on different machines will share the same URL key!');
+        console.warn('   Add NGROK_AUTHTOKEN to .env to fix this.');
+    }
+
+    // Step 3: Register with central server
+    await registerWorker();
 });
