@@ -26,9 +26,6 @@ try {
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
-
 // ==================== DATA STORES ====================
 const workers = new Map();       // workerUrl -> worker data (ONLY actual workers)
 const dashboardUsers = new Map(); // dashboardSessionId -> user data (UI-only, won't execute jobs)
@@ -36,12 +33,15 @@ const jobs = new Map();          // jobId -> job data
 const jobQueue = [];             // pending job IDs
 let roundRobinIndex = 0;         // for fair round-robin scheduling
 
-// ==================== FILE UPLOAD ====================
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
-    filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+// ==================== FILE STORAGE (IN-MEMORY) ====================
+// Store files in memory instead of disk (works better on Render's ephemeral filesystem)
+const fileStorage = new Map(); // filename -> file content + metadata
+
+const storage = multer.memoryStorage(); // Keep files in RAM
+const upload = multer({ 
+    storage,
+    limits: { fileSize: 100 * 1024 * 1024 } // 100MB max
 });
-const upload = multer({ storage });
 
 app.post('/upload', upload.array('files'), (req, res) => {
     if (!req.files || req.files.length === 0) {
@@ -50,14 +50,42 @@ app.post('/upload', upload.array('files'), (req, res) => {
     }
     
     console.log(`📤 Upload received: ${req.files.length} files`);
-    const files = req.files.map(f => {
-        const fpath = f.path.replace(/\\/g, '/');
-        console.log(`   - ${f.originalname} (${f.size} bytes) -> ${fpath}`);
-        return fpath;
-    });
+    const files = [];
     
-    console.log(`✅ Upload complete. Files saved to: ${uploadsDir}`);
+    for (const file of req.files) {
+        const fileName = `${Date.now()}-${file.originalname}`;
+        fileStorage.set(fileName, {
+            buffer: file.buffer,
+            mimetype: file.mimetype,
+            size: file.size,
+            uploadedAt: Date.now()
+        });
+        
+        console.log(`   - ${file.originalname} (${file.size} bytes) -> stored in memory`);
+        files.push(`uploads/${fileName}`);
+    }
+    
+    console.log(`✅ Upload complete. ${files.length} files in memory.`);
     res.json({ files });
+});
+
+// ==================== FILE DOWNLOAD ====================
+app.get('/uploads/:filename', (req, res) => {
+    const fileName = req.params.filename;
+    const fileData = fileStorage.get(fileName);
+    
+    if (!fileData) {
+        console.error(`❌ Download failed: File not found - ${fileName}`);
+        return res.status(404).json({ error: 'File not found' });
+    }
+    
+    console.log(`⬇️ Downloading: ${fileName} (${fileData.size} bytes)`);
+    res.setHeader('Content-Type', fileData.mimetype);
+    res.setHeader('Content-Length', fileData.size);
+    res.send(fileData.buffer);
+    
+    // Clean up after download (optional - can keep if multiple workers need it)
+    // fileStorage.delete(fileName);
 });
 
 // ==================== WORKER REGISTRATION ====================
@@ -361,6 +389,25 @@ setInterval(() => {
     }
 }, 10000);
 
+// ==================== FILE CLEANUP (in-memory storage) ====================
+// Remove files older than 30 minutes (prevents memory leaks)
+setInterval(() => {
+    const now = Date.now();
+    const maxAge = 30 * 60 * 1000; // 30 minutes
+    let cleaned = 0;
+    
+    for (const [fileName, fileData] of fileStorage) {
+        if (now - fileData.uploadedAt > maxAge) {
+            fileStorage.delete(fileName);
+            cleaned++;
+        }
+    }
+    
+    if (cleaned > 0) {
+        console.log(`🧹 Cleaned up ${cleaned} old files from memory`);
+    }
+}, 60000); // Check every minute
+
 // ==================== REST API ====================
 app.get('/api/workers', (req, res) => {
     // Only return online workers
@@ -373,9 +420,8 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         serverUrl,
-        uploadDir: uploadsDir,
-        uploadsExist: fs.existsSync(uploadsDir),
-        filesInUploads: fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir).length : 0
+        filesInMemory: fileStorage.size,
+        storageType: 'in-memory (optimal for Render)'
     });
 });
 
