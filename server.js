@@ -88,7 +88,9 @@ app.post('/register', (req, res) => {
         jobsCompleted: existing ? existing.jobsCompleted : 0,
         jobsFailed: existing ? existing.jobsFailed : 0,
         currentJob: existing ? existing.currentJob : null,
-        registeredAt: existing ? existing.registeredAt : Date.now()
+        registeredAt: existing ? existing.registeredAt : Date.now(),
+        lastAssignedAt: existing ? existing.lastAssignedAt : 0,
+        jobHistory: existing ? existing.jobHistory : []
     });
 
     console.log(`✅ Worker registered (${workers.size} total):`, workerUrl);
@@ -130,13 +132,16 @@ app.post('/submit-job', (req, res) => {
     }
 
     const jobId = crypto.randomUUID();
+    const fileSignature = files.map(f => path.basename(f)).sort().join('|');
     const job = {
         id: jobId, files, status: 'queued',
         description: description || 'No description provided',
         resources_required: resources_required || { cpu: 1, ram: 0.5, gpu: false },
         submittedAt: Date.now(), assignedWorker: null,
         startedAt: null, completedAt: null,
-        result: null, error: null, retries: 0
+        result: null, error: null, retries: 0,
+        fileSignature,
+        targetWorker: null
     };
 
     jobs.set(jobId, job);
@@ -384,6 +389,18 @@ app.delete('/api/jobs/clear-queue', (req, res) => {
     res.json({ cleared: clearedCount, message: `Cleared ${clearedCount} queued jobs` });
 });
 
+// ==================== UTILITY FUNCTIONS ====================
+const PORT = process.env.PORT || 3000;
+
+function getServerUrl() {
+    // Render provides environment variable for the deployed URL
+    if (process.env.RENDER_EXTERNAL_URL) {
+        return process.env.RENDER_EXTERNAL_URL;
+    }
+    // Fallback to localhost for development
+    return `http://localhost:${PORT}`;
+}
+
 // ==================== SOCKET.IO REAL-TIME ====================
 function getStats() {
     const allJobs = [...jobs.values()];
@@ -422,7 +439,6 @@ io.on('connection', (socket) => {
 });
 
 // ==================== START ====================
-const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log('SERVER_READY');
     console.log(`🚀 Server running on port ${PORT}`);
