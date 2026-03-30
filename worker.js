@@ -45,6 +45,10 @@ function getCapabilities() {
 const capabilities = getCapabilities();
 console.log('🖥️ Capabilities:', JSON.stringify(capabilities, null, 2));
 
+// ==================== STATE ====================
+let isExecuting = false;   // true while running a job
+let registered = false;    // true once registered with server
+
 // ==================== REGISTRATION & HEARTBEAT ====================
 let registrationAttempts = 0;
 const maxRegistrationAttempts = 20;
@@ -55,12 +59,19 @@ async function registerWorker() {
         const res = await axios.post(`${SERVER_URL}/register`, { workerUrl, capabilities });
         console.log('✅ Registered | Trust:', res.data.trustScore, '| Credits:', res.data.credits);
         
-        // Reset attempt counter on successful registration
         registrationAttempts = 0;
+        registered = true;
         
-        // Set up heartbeats once registered
+        // Start heartbeats once registered
         if (!global.heartbeatInterval) {
             global.heartbeatInterval = setInterval(sendHeartbeat, 10000);
+        }
+        
+        // Start polling for jobs once registered
+        if (!global.pollInterval) {
+            global.pollInterval = setInterval(pollForJob, 5000);
+            // Also poll immediately
+            setTimeout(pollForJob, 1000);
         }
     } catch (err) {
         registrationAttempts++;
@@ -81,7 +92,6 @@ async function sendHeartbeat() {
         await axios.post(`${SERVER_URL}/heartbeat`, { workerUrl });
     } catch (err) {
         console.warn('⚠️ Heartbeat failed:', err.message);
-        // Don't stop on heartbeat failure, server may be temporarily down
     }
 }
 
@@ -90,11 +100,31 @@ registerWorker();
 
 // Re-attempt registration every 30 seconds if not yet registered
 setInterval(() => {
-    if (registrationAttempts > 0) {
+    if (!registered) {
         console.log('Attempting to re-register...');
         registerWorker();
     }
 }, 30000);
+
+// ==================== POLL FOR JOBS ====================
+async function pollForJob() {
+    if (!registered || isExecuting) return;
+    
+    try {
+        const res = await axios.post(`${SERVER_URL}/poll-job`, { workerUrl }, { timeout: 10000 });
+        const { job } = res.data;
+        
+        if (job) {
+            console.log(`📋 Job received via poll: ${job.jobId}`);
+            executeJob(job.jobId, job.files, job.serverUrl);
+        }
+    } catch (err) {
+        // Don't spam logs for routine polls that fail
+        if (err.code !== 'ECONNREFUSED') {
+            console.warn('⚠️ Poll failed:', err.message);
+        }
+    }
+}
 
 // ==================== FILE DOWNLOAD ====================
 async function downloadFile(url, outputPath) {
@@ -118,13 +148,23 @@ function isDockerRunning() {
 // ==================== JOB EXECUTION ====================
 app.get('/', (req, res) => res.json({ status: 'worker running', port: PORT, capabilities }));
 
+// Keep /execute endpoint as fallback for LAN-mode direct dispatch
 app.post('/execute', async (req, res) => {
     const { jobId, files, serverUrl } = req.body;
     res.json({ status: 'accepted', jobId });
+    executeJob(jobId, files, serverUrl);
+});
 
+async function executeJob(jobId, files, serverUrl) {
+    if (isExecuting) {
+        console.warn('⚠️ Already executing a job, skipping:', jobId);
+        return;
+    }
+    
+    isExecuting = true;
     const SERVER = serverUrl || SERVER_URL;
 
-    console.log(`📋 Job received: ${jobId}`);
+    console.log(`📋 Executing job: ${jobId}`);
     console.log(`   Server URL: ${SERVER}`);
     console.log(`   Files to download: ${files.length}`);
 
@@ -197,16 +237,22 @@ app.post('/execute', async (req, res) => {
                     jobId, status: 'failed',
                     error: stderr || err.message, workerUrl
                 }).catch(() => {});
-                return;
+            } else {
+                console.log('✅ Job done:', jobId);
+                if (stdout) console.log('OUTPUT:', stdout.substring(0, 500));
+
+                await axios.post(`${SERVER}/job-update`, {
+                    jobId, status: 'completed',
+                    result: stdout, workerUrl
+                }).catch(() => {});
             }
-
-            console.log('✅ Job done:', jobId);
-            if (stdout) console.log('OUTPUT:', stdout.substring(0, 500));
-
-            await axios.post(`${SERVER}/job-update`, {
-                jobId, status: 'completed',
-                result: stdout, workerUrl
-            }).catch(() => {});
+            
+            // Mark worker as idle — ready for next poll
+            isExecuting = false;
+            console.log('🔄 Ready for next job');
+            
+            // Immediately poll for another job
+            setTimeout(pollForJob, 1000);
         });
 
     } catch (err) {
@@ -215,8 +261,11 @@ app.post('/execute', async (req, res) => {
             jobId, status: 'failed',
             error: err.message, workerUrl
         }).catch(() => {});
+        
+        isExecuting = false;
+        console.log('🔄 Ready for next job');
     }
-});
+}
 
 // ==================== CLEAN DISCONNECT ====================
 async function unregisterWorker() {
@@ -247,6 +296,7 @@ process.on('exit', () => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Worker running at ${workerUrl}`);
     console.log(`   Server: ${SERVER_URL}`);
+    console.log(`   Mode: Pull-based (polls server every 5s)`);
     console.log(`   Docker: ${capabilities.dockerAvailable ? '✅' : '❌'}`);
     console.log(`   GPU: ${capabilities.gpuAvailable ? capabilities.gpuModel : '❌'}`);
     registerWorker();

@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -173,7 +174,12 @@ app.post('/register', (req, res) => {
     });
 
     console.log(`✅ Worker registered (${workers.size} total):`, workerUrl);
+    console.log(`   Status: online, currentJob: null, lastAssignedAt: 0`);
+    if (jobQueue.length > 0) {
+        console.log(`   🔄 ${jobQueue.length} jobs queued - attempting assignment`);
+    }
     broadcastUpdate();
+    processQueue();  // Assign any queued jobs to the newly joined worker
 
     res.json({
         status: 'registered',
@@ -211,6 +217,7 @@ app.post('/heartbeat', (req, res) => {
             worker.status = 'online';
             console.log('💚 Worker back online:', workerUrl);
             broadcastUpdate();
+            processQueue();  // Assign queued jobs to the worker that just came back online
         }
     }
     res.json({ status: 'ok' });
@@ -269,9 +276,94 @@ app.post('/submit-job', (req, res) => {
     jobQueue.push(jobId);
     console.log('📥 Job queued:', jobId, targetWorker ? `→ targeted: ${targetWorker}` : '→ auto-assign');
     broadcastUpdate();
-    processQueue();
 
     res.json({ jobId, status: 'queued' });
+});
+
+// ==================== POLL-BASED JOB ASSIGNMENT ====================
+// Workers call this endpoint to pull jobs (works behind NAT/firewalls)
+app.post('/poll-job', (req, res) => {
+    const { workerUrl } = req.body;
+    const worker = workers.get(workerUrl);
+    
+    if (!worker) {
+        return res.status(404).json({ job: null, error: 'Worker not registered' });
+    }
+    
+    // Update heartbeat on poll
+    worker.lastHeartbeat = Date.now();
+    if (worker.status === 'offline') {
+        worker.status = 'online';
+        console.log('💚 Worker back online (via poll):', workerUrl);
+        broadcastUpdate();
+    }
+    
+    // If worker is already busy, no job
+    if (worker.currentJob) {
+        return res.json({ job: null });
+    }
+    
+    // No jobs in queue
+    if (jobQueue.length === 0) {
+        return res.json({ job: null });
+    }
+    
+    const serverUrl = getServerUrl();
+    
+    // Find a suitable job for this worker
+    for (let i = 0; i < jobQueue.length; i++) {
+        const jobId = jobQueue[i];
+        const job = jobs.get(jobId);
+        if (!job) { jobQueue.splice(i, 1); i--; continue; }
+        
+        if (job.targetWorker && job.targetWorker !== workerUrl) {
+            continue;
+        }
+        
+        // If job targets a specific worker that's offline, allow any worker
+        if (job.targetWorker && job.targetWorker === workerUrl) {
+            // Perfect match
+        } else if (job.targetWorker) {
+            // Check if targeted worker is offline — if so, clear target
+            const target = workers.get(job.targetWorker);
+            if (!target || target.status === 'offline') {
+                console.log('⚠️ Target worker offline, allowing any worker:', job.targetWorker);
+                job.targetWorker = null;
+            } else {
+                continue; // Target worker is online, skip this job for other workers
+            }
+        }
+        
+        // Assign this job
+        jobQueue.splice(i, 1);
+        job.status = 'assigned';
+        job.assignedWorker = workerUrl;
+        worker.currentJob = jobId;
+        worker.lastAssignedAt = Date.now();
+        
+        // Track job history (keep last 20)
+        worker.jobHistory.push(job.fileSignature);
+        if (worker.jobHistory.length > 20) {
+            worker.jobHistory = worker.jobHistory.slice(-20);
+        }
+        
+        const workerName = worker.capabilities?.hostname || workerUrl;
+        console.log('🚀 Assigning job', jobId.substring(0, 8), 'to', workerName,
+            job.targetWorker ? '(user-selected)' : '(auto via poll)');
+        
+        broadcastUpdate();
+        
+        return res.json({
+            job: {
+                jobId: job.id,
+                files: job.files,
+                serverUrl
+            }
+        });
+    }
+    
+    // No suitable job found
+    res.json({ job: null });
 });
 
 // ==================== JOB STATUS UPDATE (from worker) ====================
@@ -312,95 +404,13 @@ app.post('/job-update', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-// ==================== SMART SCHEDULER ====================
-// Supports: user-targeted assignment + fair round-robin fallback
+// ==================== QUEUE MONITOR ====================
+// With pull-based model, processQueue just logs status.
+// Actual assignment happens in /poll-job when workers poll.
 function processQueue() {
     if (jobQueue.length === 0) return;
-
-    const serverUrl = getServerUrl();
-    const toRetry = []; // jobs whose target worker is busy — retry later
-
-    while (jobQueue.length > 0) {
-        const jobId = jobQueue[0];
-        const job = jobs.get(jobId);
-        if (!job) { jobQueue.shift(); continue; }
-
-        let selectedWorker = null;
-
-        if (job.targetWorker) {
-            // ── USER CHOSE A SPECIFIC WORKER ──
-            const target = workers.get(job.targetWorker);
-            if (target && target.status === 'online' && !target.currentJob) {
-                selectedWorker = target;
-            } else if (target && target.status === 'online' && target.currentJob) {
-                // Target is busy — skip for now, retry later
-                jobQueue.shift();
-                toRetry.push(jobId);
-                continue;
-            } else {
-                // Target is offline — fall back to auto-assign
-                console.log('⚠️ Target worker offline, auto-assigning:', job.targetWorker);
-                job.targetWorker = null;
-            }
-        }
-
-        if (!selectedWorker) {
-            // ── AUTO-ASSIGN: round-robin, avoid repeats ──
-            const available = [...workers.values()]
-                .filter(w => w.status === 'online' && !w.currentJob)
-                .sort((a, b) => a.lastAssignedAt - b.lastAssignedAt);
-
-            if (available.length === 0) break;
-
-            // Prefer a worker who hasn't run the same files
-            for (const w of available) {
-                if (!w.jobHistory.includes(job.fileSignature)) {
-                    selectedWorker = w;
-                    break;
-                }
-            }
-            // Fallback: least recently used
-            if (!selectedWorker) selectedWorker = available[0];
-        }
-
-        if (!selectedWorker) break;
-
-        jobQueue.shift();
-        job.status = 'assigned';
-        job.assignedWorker = selectedWorker.url;
-        selectedWorker.currentJob = jobId;
-        selectedWorker.lastAssignedAt = Date.now();
-
-        // Track job history (keep last 20)
-        selectedWorker.jobHistory.push(job.fileSignature);
-        if (selectedWorker.jobHistory.length > 20) {
-            selectedWorker.jobHistory = selectedWorker.jobHistory.slice(-20);
-        }
-
-        const workerName = selectedWorker.capabilities?.hostname || selectedWorker.url;
-        console.log('🚀 Assigning job', jobId, 'to', workerName,
-            job.targetWorker ? '(user-selected)' : '(auto)');
-
-        axios.post(`${selectedWorker.url}/execute`, {
-            jobId: job.id,
-            files: job.files,
-            serverUrl
-        }).catch(err => {
-            console.error('❌ Failed to dispatch to worker:', selectedWorker.url, err.message);
-            job.status = 'queued';
-            job.assignedWorker = null;
-            selectedWorker.currentJob = null;
-            selectedWorker.status = 'offline';
-            jobQueue.unshift(jobId);
-            broadcastUpdate();
-            setTimeout(processQueue, 2000);
-        });
-    }
-
-    // Put back jobs whose target was busy
-    for (const id of toRetry) jobQueue.push(id);
-    if (toRetry.length > 0) setTimeout(processQueue, 3000);
-
+    const onlineWorkers = [...workers.values()].filter(w => w.status === 'online' && !w.currentJob);
+    console.log(`📊 Queue status: ${jobQueue.length} pending, ${onlineWorkers.length} idle workers (will be assigned on next poll)`);
     broadcastUpdate();
 }
 
@@ -464,8 +474,8 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         serverUrl,
-        storage: 'Cloudinary',
-        cloudName: cloudinary.config().cloud_name
+        storage: cloudinary ? 'Cloudinary' : 'Memory (fallback)',
+        cloudName: cloudinary ? cloudinary.config().cloud_name : 'N/A'
     });
 });
 
@@ -488,6 +498,14 @@ app.get('/api/network-info', (req, res) => {
         }
     }
     res.json({ addresses, port: PORT });
+});
+
+app.delete('/api/jobs/clear-queue', (req, res) => {
+    const clearedCount = jobQueue.length;
+    jobQueue.length = 0;
+    console.log(`🗑️ Cleared ${clearedCount} queued jobs`);
+    broadcastUpdate();
+    res.json({ cleared: clearedCount, message: `Cleared ${clearedCount} queued jobs` });
 });
 
 // ==================== SOCKET.IO REAL-TIME ====================
