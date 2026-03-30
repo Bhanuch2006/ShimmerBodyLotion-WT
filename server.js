@@ -89,12 +89,22 @@ const upload = cloudinary
 
 function uploadBufferToCloudinary(file) {
     return new Promise((resolve, reject) => {
+        const originalName = file.originalname || 'file';
+        const ext = path.extname(originalName).toLowerCase();
+        const baseName = (path.basename(originalName, ext) || 'file')
+            .replace(/[^a-zA-Z0-9_-]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'file';
+        const publicId = `${Date.now()}-${baseName}${ext}`;
+
         const uploadStream = cloudinary.uploader.upload_stream(
             {
-                resource_type: 'auto',
+                resource_type: 'raw',
                 folder: process.env.CLOUDINARY_FOLDER || undefined,
-                use_filename: true,
-                unique_filename: true
+                public_id: publicId,
+                filename_override: originalName,
+                use_filename: false,
+                unique_filename: false
             },
             (err, result) => {
                 if (err) return reject(err);
@@ -137,7 +147,7 @@ app.post('/upload', upload.array('files'), async (req, res) => {
 
 // ==================== WORKER REGISTRATION ====================
 app.post('/register', (req, res) => {
-    const { workerUrl, capabilities } = req.body;
+    const { workerUrl, capabilities, workerClientId } = req.body;
     const existing = workers.get(workerUrl);
 
     workers.set(workerUrl, {
@@ -153,6 +163,7 @@ app.post('/register', (req, res) => {
         registeredAt: existing ? existing.registeredAt : Date.now(),
         lastAssignedAt: existing ? existing.lastAssignedAt : 0,
         jobHistory: existing ? existing.jobHistory : []
+        , clientId: workerClientId || existing?.clientId || null
     });
 
     console.log(`✅ Worker registered (${workers.size} total):`, workerUrl);
@@ -188,7 +199,7 @@ app.post('/heartbeat', (req, res) => {
 
 // ==================== JOB SUBMISSION ====================
 app.post('/submit-job', (req, res) => {
-    const { files, description, resources_required } = req.body;
+    const { files, description, resources_required, submitterClientId } = req.body;
     if (!files || files.length === 0) {
         return res.status(400).json({ error: 'No files provided' });
     }
@@ -203,7 +214,8 @@ app.post('/submit-job', (req, res) => {
         startedAt: null, completedAt: null,
         result: null, error: null, retries: 0,
         fileSignature,
-        targetWorker: null
+        targetWorker: null,
+        submitterClientId: submitterClientId || null
     };
 
     jobs.set(jobId, job);
@@ -253,6 +265,11 @@ app.post('/poll-job', (req, res) => {
         if (job.targetWorker && job.targetWorker !== workerUrl) {
             continue;
         }
+
+        // Never assign a job back to the same client that submitted it.
+        if (job.submitterClientId && worker.clientId && job.submitterClientId === worker.clientId) {
+            continue;
+        }
         
         // If job targets a specific worker that's offline, allow any worker
         if (job.targetWorker && job.targetWorker === workerUrl) {
@@ -291,6 +308,8 @@ app.post('/poll-job', (req, res) => {
             job: {
                 jobId: job.id,
                 files: job.files,
+                description: job.description,
+                resources_required: job.resources_required,
                 serverUrl
             }
         });
