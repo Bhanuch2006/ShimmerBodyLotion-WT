@@ -11,6 +11,7 @@ const os = require('os');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
@@ -22,8 +23,8 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 const workers = new Map();
 const jobs = new Map();
 const jobQueue = [];
+const MAX_WORKERS = 2; // Only 2 devices can connect
 
-// ==================== FILE UPLOAD ====================
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
@@ -38,10 +39,18 @@ app.post('/upload', upload.array('files'), (req, res) => {
     res.json({ files });
 });
 
-// ==================== WORKER REGISTRATION ====================
 app.post('/register', (req, res) => {
     const { workerUrl, capabilities } = req.body;
     const existing = workers.get(workerUrl);
+
+    // Enforce 2-device limit (allow re-registration of existing workers)
+    if (!existing && workers.size >= MAX_WORKERS) {
+        console.log(`⚠️ Worker rejected (limit ${MAX_WORKERS}):`, workerUrl);
+        return res.status(403).json({
+            error: `Maximum ${MAX_WORKERS} devices allowed. Pool is full.`,
+            status: 'rejected'
+        });
+    }
 
     workers.set(workerUrl, {
         url: workerUrl,
@@ -56,7 +65,7 @@ app.post('/register', (req, res) => {
         registeredAt: existing ? existing.registeredAt : Date.now()
     });
 
-    console.log('✅ Worker registered:', workerUrl);
+    console.log(`✅ Worker registered (${workers.size}/${MAX_WORKERS}):`, workerUrl);
     broadcastUpdate();
 
     res.json({
@@ -66,7 +75,6 @@ app.post('/register', (req, res) => {
     });
 });
 
-// ==================== HEARTBEAT ====================
 app.post('/heartbeat', (req, res) => {
     const { workerUrl } = req.body;
     const worker = workers.get(workerUrl);
@@ -81,7 +89,6 @@ app.post('/heartbeat', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-// ==================== JOB SUBMISSION ====================
 app.post('/submit-job', (req, res) => {
     const { files } = req.body;
     if (!files || files.length === 0) {
@@ -105,7 +112,6 @@ app.post('/submit-job', (req, res) => {
     res.json({ jobId, status: 'queued' });
 });
 
-// ==================== JOB STATUS UPDATE (from worker) ====================
 app.post('/job-update', (req, res) => {
     const { jobId, status, result, error } = req.body;
     const job = jobs.get(jobId);
@@ -143,7 +149,6 @@ app.post('/job-update', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-// ==================== FAIR TASK SCHEDULING ====================
 function processQueue() {
     if (jobQueue.length === 0) return;
 
@@ -165,10 +170,12 @@ function processQueue() {
 
         console.log('🚀 Assigning job', jobId, 'to', worker.url);
 
+        // Use the server's actual IP so remote workers can report back
+        const localIP = getServerIP();
         axios.post(`${worker.url}/execute`, {
             jobId: job.id,
             files: job.files,
-            serverUrl: 'http://localhost:3000'
+            serverUrl: `http://${localIP}:${PORT}`
         }).catch(err => {
             console.error('❌ Failed to dispatch to worker:', worker.url, err.message);
             job.status = 'queued';
@@ -184,7 +191,6 @@ function processQueue() {
     broadcastUpdate();
 }
 
-// ==================== FAULT TOLERANCE: HEARTBEAT MONITOR ====================
 setInterval(() => {
     const now = Date.now();
     let changed = false;
@@ -215,7 +221,6 @@ setInterval(() => {
     }
 }, 10000);
 
-// ==================== REST API ====================
 app.get('/api/workers', (req, res) => res.json([...workers.values()]));
 app.get('/api/jobs', (req, res) => res.json([...jobs.values()].reverse()));
 app.get('/api/stats', (req, res) => res.json(getStats()));
@@ -238,7 +243,6 @@ app.get('/api/network-info', (req, res) => {
     res.json({ addresses, port: PORT });
 });
 
-// ==================== SOCKET.IO REAL-TIME ====================
 function getStats() {
     const allJobs = [...jobs.values()];
     const completed = allJobs.filter(j => j.status === 'completed').length;
@@ -275,9 +279,27 @@ io.on('connection', (socket) => {
     });
 });
 
+// ==================== HELPER ====================
+function getServerIP() {
+    const nets = os.networkInterfaces();
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal && net.address.startsWith('192.168.')) {
+                return net.address;
+            }
+        }
+    }
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal) return net.address;
+        }
+    }
+    return 'localhost';
+}
+
 // ==================== START ====================
-const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log('SERVER_READY');
     console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📡 Max workers: ${MAX_WORKERS}`);
 });
