@@ -10,6 +10,28 @@ const fs = require('fs');
 const os = require('os');
 const cors = require('cors');
 
+// ==================== CLOUDINARY SETUP (Optional) ====================
+let cloudinary = null;
+try {
+    cloudinary = require('cloudinary').v2;
+    
+    cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+    
+    if (cloudinary.config().cloud_name) {
+        console.log(`☁️ Cloudinary configured: ${cloudinary.config().cloud_name}`);
+    } else {
+        cloudinary = null; // Not configured
+        console.log('📦 Cloudinary credentials not set, using fallback disk storage');
+    }
+} catch (err) {
+    console.log('📦 Cloudinary not installed, using fallback disk storage');
+    cloudinary = null;
+}
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -311,11 +333,26 @@ app.get('/api/workers', (req, res) => {
 
 app.get('/api/health', (req, res) => {
     const serverUrl = getServerUrl();
+    let cloudName = 'N/A';
+    let storage = 'Disk (local)';
+    
+    if (cloudinary) {
+        try {
+            const config = cloudinary.config();
+            if (config && config.cloud_name) {
+                cloudName = config.cloud_name;
+                storage = 'Cloudinary';
+            }
+        } catch (err) {
+            console.warn('⚠️ Error reading Cloudinary config:', err.message);
+        }
+    }
+    
     res.json({
         status: 'ok',
         serverUrl,
-        storage: cloudinary ? 'Cloudinary' : 'Memory (fallback)',
-        cloudName: cloudinary ? cloudinary.config().cloud_name : 'N/A'
+        storage,
+        cloudName
     });
 });
 app.get('/api/jobs', (req, res) => res.json([...jobs.values()].reverse()));
