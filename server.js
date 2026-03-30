@@ -12,16 +12,35 @@ const cors = require('cors');
 
 // ==================== CLOUDINARY SETUP (Optional) ====================
 let cloudinary = null;
+let cloudinaryConfigured = false;
 try {
     cloudinary = require('cloudinary').v2;
-    
+
+    // Support either explicit credentials or CLOUDINARY_URL in env.
+    let cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    let apiKey = process.env.CLOUDINARY_API_KEY;
+    let apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+    if ((!cloudName || !apiKey || !apiSecret) && process.env.CLOUDINARY_URL) {
+        try {
+            const parsed = new URL(process.env.CLOUDINARY_URL);
+            cloudName = cloudName || parsed.pathname.replace(/^\//, '');
+            apiKey = apiKey || decodeURIComponent(parsed.username || '');
+            apiSecret = apiSecret || decodeURIComponent(parsed.password || '');
+        } catch (parseErr) {
+            console.warn('⚠️ CLOUDINARY_URL could not be parsed:', parseErr.message);
+        }
+    }
+
     cloudinary.config({
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-        api_key: process.env.CLOUDINARY_API_KEY,
-        api_secret: process.env.CLOUDINARY_API_SECRET
+        cloud_name: cloudName,
+        api_key: apiKey,
+        api_secret: apiSecret
     });
-    
-    if (cloudinary.config().cloud_name) {
+
+    const cfg = cloudinary.config();
+    if (cfg?.cloud_name && cfg?.api_key && cfg?.api_secret) {
+        cloudinaryConfigured = true;
         console.log(`☁️ Cloudinary configured: ${cloudinary.config().cloud_name}`);
     } else {
         cloudinary = null; // Not configured
@@ -59,35 +78,48 @@ const jobs = new Map();
 const jobQueue = [];
 
 // ==================== FILE UPLOAD ====================
-const storage = multer.diskStorage({
+const localDiskStorage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'uploads/'),
     filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
 });
-const upload = multer({ storage });
 
-app.post('/upload', upload.array('files'), (req, res) => {
-    if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ error: 'No files uploaded' });
-    }
-    app.post('/upload', upload.array('files'), async (req, res) => {
+const upload = cloudinary
+    ? multer({ storage: multer.memoryStorage() })
+    : multer({ storage: localDiskStorage });
+
+function uploadBufferToCloudinary(file) {
+    return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                resource_type: 'auto',
+                folder: process.env.CLOUDINARY_FOLDER || undefined,
+                use_filename: true,
+                unique_filename: true
+            },
+            (err, result) => {
+                if (err) return reject(err);
+                resolve(result);
+            }
+        );
+
+        uploadStream.end(file.buffer);
+    });
+}
+
+app.post('/upload', upload.array('files'), async (req, res) => {
     try {
         if (!req.files || req.files.length === 0) {
             return res.status(400).json({ error: 'No files uploaded' });
         }
 
         // If Cloudinary configured → upload there
-        if (cloudinary) {
+        if (cloudinaryConfigured && cloudinary) {
             const uploadedFiles = [];
 
             for (const file of req.files) {
-                const result = await cloudinary.uploader.upload(file.path, {
-                    resource_type: "auto"
-                });
+                const result = await uploadBufferToCloudinary(file);
 
                 uploadedFiles.push(result.secure_url);
-
-                // delete local temp file
-                fs.unlinkSync(file.path);
             }
 
             return res.json({ files: uploadedFiles });
@@ -101,7 +133,6 @@ app.post('/upload', upload.array('files'), (req, res) => {
         console.error("❌ Upload error:", err);
         res.status(500).json({ error: "Upload failed" });
     }
-});
 });
 
 // ==================== WORKER REGISTRATION ====================
