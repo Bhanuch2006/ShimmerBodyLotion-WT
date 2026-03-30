@@ -13,6 +13,16 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 const PORT = process.env.PORT || 3000;
 
+// ==================== SERVER URL CONFIGURATION ====================
+let MANUAL_SERVER_URL = null;
+try {
+    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '.server-config.json'), 'utf8'));
+    if (config.serverUrl) {
+        MANUAL_SERVER_URL = config.serverUrl;
+        console.log('[Config] Using manual server URL:', MANUAL_SERVER_URL);
+    }
+} catch {}
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
@@ -35,9 +45,18 @@ const upload = multer({ storage });
 
 app.post('/upload', upload.array('files'), (req, res) => {
     if (!req.files || req.files.length === 0) {
+        console.error('❌ Upload failed: No files received');
         return res.status(400).json({ error: 'No files uploaded' });
     }
-    const files = req.files.map(f => f.path.replace(/\\/g, '/'));
+    
+    console.log(`📤 Upload received: ${req.files.length} files`);
+    const files = req.files.map(f => {
+        const fpath = f.path.replace(/\\/g, '/');
+        console.log(`   - ${f.originalname} (${f.size} bytes) -> ${fpath}`);
+        return fpath;
+    });
+    
+    console.log(`✅ Upload complete. Files saved to: ${uploadsDir}`);
     res.json({ files });
 });
 
@@ -134,11 +153,17 @@ app.post('/unregister', (req, res) => {
 app.post('/submit-job', (req, res) => {
     const { files, submittedBy, targetWorker } = req.body;
     if (!files || files.length === 0) {
+        console.error('❌ Job submission failed: No files provided');
         return res.status(400).json({ error: 'No files provided' });
     }
 
     const jobId = crypto.randomUUID();
     const fileSignature = files.map(f => path.basename(f)).sort().join('|');
+    
+    console.log(`📋 Job submitted: ${jobId}`);
+    console.log(`   Files: ${files.map(f => path.basename(f)).join(', ')}`);
+    console.log(`   By: ${submittedBy || 'unknown'}`);
+    
     const job = {
         id: jobId, files, status: 'queued',
         submittedAt: Date.now(), assignedWorker: null,
@@ -342,6 +367,18 @@ app.get('/api/workers', (req, res) => {
     const online = [...workers.values()].filter(w => w.status === 'online');
     res.json(online);
 });
+
+app.get('/api/health', (req, res) => {
+    const serverUrl = getServerUrl();
+    res.json({
+        status: 'ok',
+        serverUrl,
+        uploadDir: uploadsDir,
+        uploadsExist: fs.existsSync(uploadsDir),
+        filesInUploads: fs.existsSync(uploadsDir) ? fs.readdirSync(uploadsDir).length : 0
+    });
+});
+
 app.get('/api/jobs', (req, res) => res.json([...jobs.values()].reverse()));
 app.get('/api/stats', (req, res) => res.json(getStats()));
 app.get('/api/status/:jobId', (req, res) => {
@@ -409,18 +446,54 @@ io.on('connection', (socket) => {
 
 // ==================== HELPER ====================
 function getServerUrl() {
-    // If deployed with a PUBLIC_URL env var, use that
-    if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL;
+    // Priority 1: Render auto-provides this URL
+    if (process.env.RENDER_EXTERNAL_URL) {
+        console.log('[Server] Using Render URL:', process.env.RENDER_EXTERNAL_URL);
+        return process.env.RENDER_EXTERNAL_URL;
+    }
+    
+    // Priority 2: Manual PUBLIC_URL environment variable
+    if (process.env.PUBLIC_URL) {
+        console.log('[Server] Using PUBLIC_URL env:', process.env.PUBLIC_URL);
+        return process.env.PUBLIC_URL;
+    }
 
-    // Otherwise derive from local network
+    // Priority 3: Manual override from config file
+    if (MANUAL_SERVER_URL) {
+        console.log('[Server] Using config serverUrl:', MANUAL_SERVER_URL);
+        return MANUAL_SERVER_URL;
+    }
+
+    // Priority 4: Auto-detect from local network (avoid virtual networks)
+    const virtualPrefixes = ['172.', '169.254', '127.', '10.0.8'];
+    const preferredNames = ['Ethernet', 'Wi-Fi', 'en0', 'en1', 'eth0', 'wlan0'];
     const nets = os.networkInterfaces();
-    for (const name of Object.keys(nets)) {
-        for (const net of nets[name]) {
-            if (net.family === 'IPv4' && !net.internal) {
-                return `http://${net.address}:${PORT}`;
+    
+    // Try preferred interfaces first
+    for (const name of preferredNames) {
+        if (nets[name]) {
+            for (const net of nets[name]) {
+                if (net.family === 'IPv4' && !net.internal && !virtualPrefixes.some(p => net.address.startsWith(p))) {
+                    const url = `http://${net.address}:${PORT}`;
+                    console.log(`[Server] Using Network: ${name} (${net.address})`);
+                    return url;
+                }
             }
         }
     }
+    
+    // Fallback: check all, skip virtual
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal && !virtualPrefixes.some(p => net.address.startsWith(p))) {
+                const url = `http://${net.address}:${PORT}`;
+                console.log(`[Server] Using Network: ${name} (${net.address})`);
+                return url;
+            }
+        }
+    }
+    
+    console.log('[Server] ⚠️ No physical network found, using localhost');
     return `http://localhost:${PORT}`;
 }
 

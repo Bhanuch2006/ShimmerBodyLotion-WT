@@ -14,12 +14,17 @@ let workerProcess;
 // 3. Default fallback: https://sharingiscaring.onrender.com
 const fs = require('fs');
 let CENTRAL_SERVER = process.env.CENTRAL_SERVER;
+let WORKER_URL_OVERRIDE = null;
 
 if (!CENTRAL_SERVER) {
     try {
         const config = JSON.parse(fs.readFileSync(path.join(__dirname, '.server-config.json'), 'utf8'));
         CENTRAL_SERVER = config.serverUrl;
+        WORKER_URL_OVERRIDE = config.workerUrl; // Can be null (auto-detect) or explicit URL
         console.log('[Config] Loaded server URL from .server-config.json');
+        if (WORKER_URL_OVERRIDE) {
+            console.log(`[Config] Using explicit worker URL: ${WORKER_URL_OVERRIDE}`);
+        }
     } catch {
         CENTRAL_SERVER = 'https://sharingiscaring.onrender.com';
         console.log('[Config] Using default server URL');
@@ -28,13 +33,35 @@ if (!CENTRAL_SERVER) {
 
 function getLocalIP() {
     const nets = os.networkInterfaces();
+    // Virtual networks to skip (Docker, WSL, Hyper-V, VirtualBox, etc.)
+    const virtualPrefixes = ['172.', '169.254', '127.', '10.0.8'];
+    
+    // Prioritize physical network interfaces
+    const preferredNames = ['Ethernet', 'Wi-Fi', 'en0', 'en1', 'eth0', 'wlan0'];
+    
+    // First try preferred interfaces
+    for (const name of preferredNames) {
+        if (nets[name]) {
+            for (const net of nets[name]) {
+                if (net.family === 'IPv4' && !net.internal && !virtualPrefixes.some(p => net.address.startsWith(p))) {
+                    console.log(`[Main] Using Network: ${name} (${net.address})`);
+                    return net.address;
+                }
+            }
+        }
+    }
+    
+    // Fallback: check all interfaces, skip virtual networks
     for (const name of Object.keys(nets)) {
         for (const net of nets[name]) {
-            if (net.family === 'IPv4' && !net.internal) {
+            if (net.family === 'IPv4' && !net.internal && !virtualPrefixes.some(p => net.address.startsWith(p))) {
+                console.log(`[Main] Using Network: ${name} (${net.address})`);
                 return net.address;
             }
         }
     }
+    
+    console.log('[Main] ⚠️ No physical network found, using localhost');
     return 'localhost';
 }
 
@@ -74,9 +101,14 @@ function createWindow() {
 function startWorker() {
     if (workerProcess) return;
 
-    const localIP = getLocalIP();
     const workerPort = '4000';
-    const workerUrl = `http://${localIP}:${workerPort}`;
+    
+    // Use explicit URL from config if set, otherwise auto-detect
+    let workerUrl = WORKER_URL_OVERRIDE;
+    if (!workerUrl) {
+        const localIP = getLocalIP();
+        workerUrl = `http://${localIP}:${workerPort}`;
+    }
 
     workerProcess = fork(path.join(__dirname, 'worker.js'), [], {
         silent: true,

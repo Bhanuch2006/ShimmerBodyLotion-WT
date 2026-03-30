@@ -124,6 +124,10 @@ app.post('/execute', async (req, res) => {
 
     const SERVER = serverUrl || SERVER_URL;
 
+    console.log(`📋 Job received: ${jobId}`);
+    console.log(`   Server URL: ${SERVER}`);
+    console.log(`   Files to download: ${files.length}`);
+
     try {
         await axios.post(`${SERVER}/job-update`, { jobId, status: 'running', workerUrl });
 
@@ -145,8 +149,17 @@ app.post('/execute', async (req, res) => {
             }
 
             const localPath = path.join(jobsPath, fileName);
-            console.log('⬇️ Downloading:', cleanPath, '->', fileName);
-            await downloadFile(`${SERVER}/${cleanPath}`, localPath);
+            const downloadUrl = `${SERVER}/${cleanPath}`;
+            console.log(`⬇️ Downloading: ${downloadUrl}`);
+            
+            try {
+                await downloadFile(downloadUrl, localPath);
+                console.log(`   ✅ Downloaded: ${fileName}`);
+            } catch (downloadErr) {
+                console.error(`   ❌ Download failed: ${downloadErr.message}`);
+                throw downloadErr;
+            }
+            
             downloadedFiles.push(fileName);
         }
 
