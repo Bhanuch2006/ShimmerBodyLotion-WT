@@ -10,18 +10,13 @@ const navItems = [
     { to: '/jobs', label: 'Submitted Tasks', tag: '04' }
 ];
 
-const shortHost = (url) => {
-    try {
-        return new URL(url).host;
-    } catch (error) {
-        return url?.replace(/^https?:\/\//, '') || 'not set';
-    }
-};
 
 const Sidebar = ({ isHidden = false }) => {
-    const { connected, currentUrl } = useSocket();
+    const { currentUrl } = useSocket();
+
     const theme = useTheme();
     const [workerOn, setWorkerOn] = useState(false);
+    const [isTogglingWorker, setIsTogglingWorker] = useState(false);
     const [sysInfo, setSysInfo] = useState({ cpu: '--', cores: '--', mem: '--', plat: '--' });
 
     useEffect(() => {
@@ -29,7 +24,12 @@ const Sidebar = ({ isHidden = false }) => {
             return;
         }
 
+        let mounted = true;
+
         window.electronAPI.getSystemInfo().then((info) => {
+            if (!mounted) {
+                return;
+            }
             setSysInfo({
                 cpu: (info.cpuModel || '').split('@')[0].trim().substring(0, 22) || '--',
                 cores: info.cpuCores || '--',
@@ -38,7 +38,25 @@ const Sidebar = ({ isHidden = false }) => {
             });
         });
 
-        window.electronAPI.onWorkerStatus((running) => setWorkerOn(running));
+        window.electronAPI.getWorkerStatus().then((running) => {
+            if (mounted) {
+                setWorkerOn(Boolean(running));
+            }
+        });
+
+        const cleanupWorkerStatus = window.electronAPI.onWorkerStatus((running) => {
+            if (mounted) {
+                setWorkerOn(running);
+                setIsTogglingWorker(false);
+            }
+        });
+
+        return () => {
+            mounted = false;
+            if (typeof cleanupWorkerStatus === 'function') {
+                cleanupWorkerStatus();
+            }
+        };
     }, []);
 
     const handleThemeChange = () => {
@@ -56,19 +74,28 @@ const Sidebar = ({ isHidden = false }) => {
             return;
         }
 
-        await window.electronAPI.toggleWorker(checked, currentUrl);
-        setWorkerOn(checked);
+        setIsTogglingWorker(true);
+
+        try {
+            const result = await window.electronAPI.toggleWorker(checked, currentUrl);
+            if (result?.status === 'already-running') {
+                setWorkerOn(true);
+            } else if (result?.status === 'already-stopped') {
+                setWorkerOn(false);
+            } else if (result?.status !== 'started' && result?.status !== 'stopped') {
+                setWorkerOn(false);
+            }
+        } finally {
+            setIsTogglingWorker(false);
+        }
     };
 
     return (
         <header className={`floating-nav-wrap${isHidden ? ' is-hidden' : ''}`}>
             <div className="floating-nav">
                 <div className="floating-brand">
-                    <div className="logo-icon nav-logo" aria-hidden="true">
-                        <span className="default-logo">wand</span>
-                        <span className="logo-spark logo-spark-a"></span>
-                        <span className="logo-spark logo-spark-b"></span>
-                    </div>
+                    <img src="/src/assets/logo.png" alt="Core&Graphics" className="nav-logo" />
+                    <span className="brand-name">Core&Graphics</span>
                 </div>
 
                 <nav className="nav floating-nav-list">
@@ -92,14 +119,11 @@ const Sidebar = ({ isHidden = false }) => {
             </div>
 
             <div className="nav-meta-row">
-                <div className="nav-meta-pill">
-                    <span className={`dot ${connected ? 'on' : ''}`}></span>
-                    <span>{connected ? shortHost(currentUrl) : 'offline'}</span>
-                </div>
+
                 <div className="nav-meta-pill">
                     <span>{workerOn ? 'worker on' : 'worker off'}</span>
                     <label className="sw">
-                        <input type="checkbox" checked={workerOn} onChange={toggleWorker} />
+                        <input type="checkbox" checked={workerOn} onChange={toggleWorker} disabled={isTogglingWorker} />
                         <span className="sl"></span>
                     </label>
                 </div>

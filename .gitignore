@@ -20,6 +20,8 @@ yarn.lock
 *~
 .DS_Store
 
+..server-config.json
+
 # OS
 Thumbs.db
 .DS_Store

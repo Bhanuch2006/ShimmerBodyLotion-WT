@@ -2,11 +2,59 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electr
 const { fork } = require('child_process');
 const path = require('path');
 const os = require('os');
+const net = require('net');
 
 let mainWindow;
 let tray;
 let serverProcess;
 let workerProcess;
+const locallySubmittedJobIds = new Set();
+let workerMessageListenerReady = false;
+const pendingWorkerMessages = [];
+
+function sendWorkerMessageToRenderer(msg) {
+    if (!mainWindow) return;
+    if (workerMessageListenerReady) {
+        mainWindow.webContents.send('worker-message', msg);
+        return;
+    }
+
+    if (msg?.type === 'JOB_OFFER') {
+        pendingWorkerMessages.push(msg);
+    }
+}
+
+function flushPendingWorkerMessages() {
+    if (!mainWindow || !workerMessageListenerReady) return;
+    while (pendingWorkerMessages.length > 0) {
+        mainWindow.webContents.send('worker-message', pendingWorkerMessages.shift());
+    }
+}
+
+function findAvailablePort(preferredPort = 4000) {
+    return new Promise((resolve, reject) => {
+        const tryPort = (port) => {
+            const tester = net.createServer();
+
+            tester.once('error', (error) => {
+                if (error.code === 'EADDRINUSE') {
+                    tryPort(port + 1);
+                    return;
+                }
+                reject(error);
+            });
+
+            tester.once('listening', () => {
+                const { port: freePort } = tester.address();
+                tester.close(() => resolve(freePort));
+            });
+
+            tester.listen(port, '127.0.0.1');
+        };
+
+        tryPort(preferredPort);
+    });
+}
 
 // Set custom user data path to avoid cache access issues in shared environments
 const userDataPath = path.join(__dirname, '.electron_data');
@@ -49,7 +97,6 @@ function createWindow() {
     const url = isDev ? 'http://localhost:5173' : 'http://localhost:3000';
 
     if (isDev) {
-        // Retry logic for Vite dev server in case of startup delay
         const tryLoad = () => {
             mainWindow.loadURL(url).catch(() => {
                 console.log('[Electron] Vite not ready, retrying in 1s...');
@@ -60,6 +107,10 @@ function createWindow() {
     } else {
         mainWindow.loadURL(url);
     }
+
+    mainWindow.webContents.on('did-start-loading', () => {
+        workerMessageListenerReady = false;
+    });
 
     mainWindow.on('close', (e) => {
         if (tray) {
@@ -117,29 +168,55 @@ ipcMain.handle('get-system-info', () => ({
 }));
 
 ipcMain.handle('get-server-url', () => CENTRAL_SERVER);
+ipcMain.handle('get-worker-status', () => Boolean(workerProcess));
 
-ipcMain.handle('toggle-worker', (event, start, serverUrl) => {
+ipcMain.handle('toggle-worker', async (event, start, serverUrl) => {
     if (start && !workerProcess) {
         const targetUrl = serverUrl || CENTRAL_SERVER;
-        workerProcess = fork(path.join(__dirname, 'worker.js'), [], { 
+        const workerPort = await findAvailablePort(4000);
+        workerProcess = fork(path.join(__dirname, 'worker.js'), [], {
             silent: true,
-            env: { ...process.env, SERVER_URL: targetUrl }
+            env: { ...process.env, SERVER_URL: targetUrl, WORKER_PORT: String(workerPort) }
         });
         workerProcess.stdout.on('data', d => process.stdout.write(`[Worker] ${d}`));
         workerProcess.stderr.on('data', d => process.stderr.write(`[Worker ERR] ${d}`));
-        
+
         workerProcess.on('message', (msg) => {
-            if (mainWindow) mainWindow.webContents.send('worker-message', msg);
+            sendWorkerMessageToRenderer(msg);
         });
 
-        workerProcess.on('exit', () => {
+        workerProcess.on('error', (error) => {
+            sendWorkerMessageToRenderer({
+                type: 'STATUS',
+                text: `Worker failed to start: ${error.message}`
+            });
+        });
+
+        // Ensure worker knows which jobs were submitted from this local app
+        for (const jobId of locallySubmittedJobIds) {
+            workerProcess.send({ type: 'SUBMITTED_JOB', jobId });
+        }
+
+        workerProcess.on('exit', (code, signal) => {
             workerProcess = null;
+            sendWorkerMessageToRenderer({
+                type: 'STATUS',
+                text: `Worker stopped${code !== null ? ` (exit ${code})` : ''}${signal ? ` via ${signal}` : ''}.`
+            });
             if (mainWindow) mainWindow.webContents.send('worker-status', false);
         });
+        sendWorkerMessageToRenderer({
+            type: 'STATUS',
+            text: `Worker starting on port ${workerPort}...`
+        });
+        if (mainWindow) mainWindow.webContents.send('worker-status', true);
         return { status: 'started' };
     } else if (!start && workerProcess) {
-        workerProcess.kill();
-        workerProcess = null;
+        const proc = workerProcess;
+        proc.send({ type: 'SHUTDOWN' });
+        setTimeout(() => {
+            if (workerProcess === proc) proc.kill();
+        }, 2500);
         return { status: 'stopped' };
     }
     return { status: start ? 'already-running' : 'already-stopped' };
@@ -158,6 +235,25 @@ ipcMain.handle('worker-reply', (event, msgType, data) => {
         return { status: 'sent' };
     }
     return { status: 'worker-offline' };
+});
+
+ipcMain.handle('mark-submitted-job', (event, jobId) => {
+    if (!jobId || typeof jobId !== 'string') {
+        return { status: 'invalid-job-id' };
+    }
+
+    locallySubmittedJobIds.add(jobId);
+
+    if (workerProcess) {
+        workerProcess.send({ type: 'SUBMITTED_JOB', jobId });
+    }
+
+    return { status: 'recorded' };
+});
+
+ipcMain.on('worker-message-listener-ready', () => {
+    workerMessageListenerReady = true;
+    flushPendingWorkerMessages();
 });
 
 // ==================== APP LIFECYCLE ====================

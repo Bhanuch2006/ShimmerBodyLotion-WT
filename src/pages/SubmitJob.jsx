@@ -29,6 +29,23 @@ const SubmitJob = () => {
     const [isOver, setIsOver] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
+    const getSubmitterIdentity = async () => {
+        if (window.electronAPI?.getSystemInfo) {
+            try {
+                const info = await window.electronAPI.getSystemInfo();
+                if (info?.hostname) {
+                    return { clientId: `host:${info.hostname}`, hostname: info.hostname };
+                }
+            } catch {}
+        }
+        const key = 'submitter_client_id';
+        const existing = localStorage.getItem(key);
+        if (existing) return { clientId: existing, hostname: null };
+        const generated = `web:${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        localStorage.setItem(key, generated);
+        return { clientId: generated, hostname: null };
+    };
+
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
 
@@ -144,15 +161,22 @@ const SubmitJob = () => {
                 timeout: 30000
             });
 
-            await axios.post(
+            const { clientId: submitterClientId, hostname: submitterHostname } = await getSubmitterIdentity();
+            const submitRes = await axios.post(
                 `${currentUrl}/submit-job`,
                 {
                     description: description.trim(),
                     files: uploadResponse.data.files,
-                    resources_required: { ...resources }
+                    resources_required: { ...resources },
+                    submitterClientId,
+                    submitterHostname
                 },
-                { timeout: 10000 }
+                { timeout: 60000 }
             );
+
+            if (window.electronAPI?.markSubmittedJob && submitRes?.data?.jobId) {
+                await window.electronAPI.markSubmittedJob(submitRes.data.jobId);
+            }
 
             setFiles([]);
             setDescription('');

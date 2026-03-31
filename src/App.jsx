@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { SocketProvider, useSocket } from './context/SocketContext';
+import { SocketProvider } from './context/SocketContext';
 import './index.css';
 
 import Dashboard from './pages/Dashboard';
@@ -56,7 +56,6 @@ const WindowControls = () => {
 };
 
 const AppLayout = () => {
-    const { connected, currentUrl } = useSocket();
     const mainRef = useRef(null);
     const [navHidden, setNavHidden] = useState(false);
 
@@ -99,12 +98,6 @@ const AppLayout = () => {
                     <Route path="/connect" element={<ConnectDevice />} />
                 </Routes>
             </main>
-
-            <div className={`cst ${connected ? '' : 'off'}`} id="cst">
-                <span className="cst-dot"></span>
-                {connected ? `Connected to ${currentUrl}` : 'Disconnected from cluster'}
-            </div>
-            <div className="toast-box" id="toasts"></div>
         </div>
     );
 };

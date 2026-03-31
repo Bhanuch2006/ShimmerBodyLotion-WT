@@ -17,6 +17,14 @@ const formatDuration = (job) => {
 
 const shortWorkerName = (worker) => worker?.capabilities?.hostname || worker?.url || 'Unknown worker';
 const shortJobId = (id) => (id ? `${id.slice(0, 8)}...` : 'pending');
+const getAssignedWorkerLabel = (job, workers) => {
+    if (!job?.assignedWorker) {
+        return 'waiting for a worker';
+    }
+
+    const matchedWorker = workers.find((worker) => worker.url === job.assignedWorker);
+    return shortWorkerName(matchedWorker) || job.assignedWorker;
+};
 
 const Dashboard = () => {
     const { connected, stats, workers, jobs, currentUrl } = useSocket();
@@ -24,26 +32,63 @@ const Dashboard = () => {
     const [localWorkerRunning, setLocalWorkerRunning] = useState(false);
     const [workerLog, setWorkerLog] = useState('Local node is resting quietly.');
 
+    const [hostname, setHostname] = useState(null);
+    useEffect(() => {
+        if (window.electronAPI?.getSystemInfo) {
+            window.electronAPI.getSystemInfo().then(info => {
+                if (info?.hostname) setHostname(info.hostname);
+            });
+        }
+    }, [window.electronAPI]);
+
     const activeWorkersCount = workers.filter((worker) => worker.status === 'online').length;
     const queuedJobs = jobs.filter((job) => job.status === 'queued').length;
     const runningJobs = jobs.filter((job) => job.status === 'running' || job.status === 'assigned').length;
-    const floatingJobs = jobs.filter((job) => job.status !== 'completed').slice(0, 4);
-    const workerBoard = workers.slice(0, 4);
+    const floatingJobs = jobs.slice(0, 5);
+    const workerBoard = workers.filter((worker) => worker.status === 'online').slice(0, 4);
+    
+    // Improved detection: match by hostname first (via clientId or capabilities), then fallback to localhost URL
+    const myWorker = workers.find(w => {
+        const myName = hostname?.toLowerCase().split('.')[0];
+        const wName = w.capabilities?.hostname?.toLowerCase().split('.')[0];
+        const myId = myName ? `host:${myName}` : null;
+        
+        return (myName && wName === myName) || 
+               (myId && w.clientId?.toLowerCase().includes(myName)) ||
+               w.url.includes('localhost') || 
+               w.url.includes('127.0.0.1') ||
+               w.url.includes('0.0.0.0');
+    });
+    const myCredits = myWorker ? myWorker.credits : 0;
 
     useEffect(() => {
         if (!window.electronAPI) {
             return;
         }
 
-        window.electronAPI.onWorkerStatus((running) => {
+        let mounted = true;
+
+        window.electronAPI.getWorkerStatus?.().then((running) => {
+            if (mounted) {
+                setLocalWorkerRunning(Boolean(running));
+            }
+        });
+
+        const cleanupWorkerStatus = window.electronAPI.onWorkerStatus((running) => {
             setLocalWorkerRunning(running);
         });
 
-        window.electronAPI.onWorkerMessage((message) => {
+        const cleanupWorkerMessage = window.electronAPI.onWorkerMessage((message) => {
             if (message.type === 'STATUS') {
                 setWorkerLog(message.text);
             }
         });
+
+        return () => {
+            mounted = false;
+            if (typeof cleanupWorkerStatus === 'function') cleanupWorkerStatus();
+            if (typeof cleanupWorkerMessage === 'function') cleanupWorkerMessage();
+        };
     }, []);
 
     return (
@@ -52,8 +97,8 @@ const Dashboard = () => {
                 <article className="card board-intro-card">
                     <div className="board-intro-head">
                         <div>
-                            <p className="eyebrow">dashboard</p>
-                            <h1 className="stitle">Submission Lounge</h1>
+                            <p className="eyebrow">system control</p>
+                            <h1 className="stitle">Core&Graphics Command Center</h1>
                         </div>
                         <div className={`hero-badge ${connected ? '' : 'is-offline'}`}>
                             {connected ? `Linked to ${currentUrl}` : 'Waiting for a network link'}
@@ -107,7 +152,7 @@ const Dashboard = () => {
                         </div>
                         <div className="stat-note mint clipped">
                             <span className="si">Credits</span>
-                            <strong className="sv">{stats.totalCreditsEarned}</strong>
+                            <strong className="sv">{myCredits}</strong>
                             <span className="sl2">earned so far</span>
                         </div>
                         <div className="stat-note blush">
@@ -152,8 +197,8 @@ const Dashboard = () => {
                             <strong>{theme === 'coquette' ? 'Credit note' : 'Credit note'}</strong>
                             <span>
                                 {theme === 'coquette'
-                                    ? `${stats.totalCreditsEarned} sparkly credits are already tucked into the board.`
-                                    : `${stats.totalCreditsEarned} credits are currently recorded on this board.`}
+                                    ? `${myCredits} sparkly credits are already tucked into the board.`
+                                    : `${myCredits} credits are currently recorded for your node.`}
                             </span>
                         </div>
                         <div className="mini-note sticky-mint clipped">
@@ -253,10 +298,10 @@ const Dashboard = () => {
                                         <span className="cloud-id">{shortJobId(job.id)}</span>
                                         <span className={`jst s-${job.status || 'queued'}`}>{job.status || 'queued'}</span>
                                     </div>
-                                    <strong>{job.description || 'No message attached yet.'}</strong>
+                                    <strong className="cloud-title">{job.description || 'No message attached yet.'}</strong>
                                     <div className="cloud-footer">
                                         <div className="cloud-meta">
-                                            <span>{job.assignedWorker || 'waiting for a worker'}</span>
+                                            <span>{getAssignedWorkerLabel(job, workers)}</span>
                                             <span>{formatDuration(job)}</span>
                                         </div>
                                     </div>

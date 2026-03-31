@@ -5,6 +5,8 @@ const shortWorkerName = (worker) => worker?.capabilities?.hostname || worker?.ur
 
 const Workers = () => {
     const { workers } = useSocket();
+    const onlineWorkers = workers.filter(w => w.status === 'online');
+
 
     return (
         <section className="sec workers-page" id="sec-workers">
@@ -19,12 +21,13 @@ const Workers = () => {
             </div>
 
             <div className="workers-grid" id="wDetail">
-                {workers.length === 0 ? (
+                {onlineWorkers.length === 0 ? (
                     <div className="card empty-card">
-                        <p className="empty">No connected devices registered.</p>
+                        <p className="empty">No online devices connected. Enable the worker toggle to share your compute.</p>
                     </div>
                 ) : (
-                    workers.map((worker, index) => {
+                    onlineWorkers.map((worker, index) => {
+
                         const capabilities = worker.capabilities || {};
 
                         return (
