@@ -40,6 +40,27 @@ const getWorkerLabel = (job, workers, jobsArray) => {
     return matchedWorker?.capabilities?.hostname || matchedWorker?.url || job.assignedWorker;
 };
 
+const FILE_ICONS = {
+    '.pt': '🧠', '.pth': '🧠', '.pkl': '🧠', '.h5': '🧠',
+    '.joblib': '🧠', '.onnx': '🧠', '.keras': '🧠', '.pb': '🧠',
+    '.txt': '📄', '.log': '📄',
+    '.json': '📊', '.csv': '📊',
+    '.png': '🖼️', '.jpg': '🖼️', '.svg': '🖼️',
+    '.zip': '📦',
+};
+const getFileIcon = (filename) => {
+    const ext = '.' + filename.split('.').pop().toLowerCase();
+    return FILE_ICONS[ext] || '📎';
+};
+const getFileCategory = (filename) => {
+    const ext = '.' + filename.split('.').pop().toLowerCase();
+    const modelExts = ['.pt', '.pth', '.pkl', '.h5', '.joblib', '.onnx', '.keras', '.pb'];
+    if (modelExts.includes(ext)) return 'model';
+    if (ext === '.json') return 'metrics';
+    if (ext === '.txt' || ext === '.log') return 'logs';
+    return 'other';
+};
+
 const Jobs = () => {
     const { socket, jobs, workers, currentUrl } = useSocket();
     const [selectedJob, setSelectedJob] = useState(null);
@@ -70,8 +91,22 @@ const Jobs = () => {
         }
     };
 
+    const handleDownload = (job) => {
+        if (!job.output_file_url) return;
+        // Use the server's download endpoint for local files, or the direct URL for cloud
+        const downloadUrl = currentUrl
+            ? `${currentUrl}/tasks/${job.id}/download`
+            : job.output_file_url;
+        window.open(downloadUrl, '_blank');
+    };
+
     const completedJobs = jobs.filter((job) => job.status === 'completed').length;
     const runningJobs = jobs.filter((job) => job.status === 'running' || job.status === 'assigned').length;
+
+    // Keep selectedJob in sync with socket updates
+    const activeSelectedJob = selectedJob
+        ? jobs.find(j => j.id === selectedJob.id) || selectedJob
+        : null;
 
     return (
         <section className="sec jobs-page" id="sec-jobs">
@@ -124,6 +159,7 @@ const Jobs = () => {
                                 const resources = job.resources_required || {};
                                 const description = job.description || 'No message attached.';
                                 const hasOutput = Boolean(job.result || job.error || job.status === 'running');
+                                const hasDownload = job.status === 'completed' && job.output_file_url;
 
                                 return (
                                     <article
@@ -178,6 +214,15 @@ const Jobs = () => {
                                             ) : (
                                                 <span className="jobs-muted">Pending</span>
                                             )}
+                                            {hasDownload && (
+                                                <button
+                                                    className="vbtn download-btn"
+                                                    onClick={() => handleDownload(job)}
+                                                    title="Download output.zip"
+                                                >
+                                                    ⬇ Download
+                                                </button>
+                                            )}
                                             {(job.status === 'assigned' || job.status === 'queued' || job.status === 'running') && (
                                                 <button
                                                     className="vbtn cancel-btn"
@@ -197,20 +242,66 @@ const Jobs = () => {
                 )}
             </div>
 
-            {selectedJob && (
+            {activeSelectedJob && (
                 <div className="modal-bg" onClick={() => setSelectedJob(null)}>
                     <div className="modal shimmer-modal" onClick={(event) => event.stopPropagation()}>
                         <div className="mh">
                             <div>
                                 <p className="eyebrow">job note</p>
-                                <h2>{shortJobId(selectedJob.id)} / {selectedJob.status}</h2>
+                                <h2>{shortJobId(activeSelectedJob.id)} / {activeSelectedJob.status}</h2>
                             </div>
                             <button className="mx" onClick={() => setSelectedJob(null)}>close</button>
                         </div>
-                        <pre className={`mc ${selectedJob.error ? 'err' : ''}`}>
-                            {selectedJob.status === 'running' || (selectedJob.isParent && selectedJob.status !== 'completed' && selectedJob.status !== 'failed')
-                                ? (liveLogs[selectedJob.id] || 'Connecting to remote worker(s)...\nWaiting for execution logs...\n')
-                                : (selectedJob.result || selectedJob.error || 'No output yet.')}
+
+                        {/* Completion badge */}
+                        {activeSelectedJob.status === 'completed' && (
+                            <div className="output-completion-badge">
+                                ✅ Task Completed
+                            </div>
+                        )}
+                        {activeSelectedJob.status === 'failed' && (
+                            <div className="output-completion-badge output-failed-badge">
+                                ❌ Task Failed
+                            </div>
+                        )}
+
+                        {/* Output warning */}
+                        {activeSelectedJob.output_warning && (
+                            <div className="output-warning">
+                                ⚠️ {activeSelectedJob.output_warning}
+                            </div>
+                        )}
+
+                        {/* Output file list */}
+                        {activeSelectedJob.output_files && activeSelectedJob.output_files.length > 0 && (
+                            <div className="output-file-section">
+                                <p className="eyebrow">output artifacts</p>
+                                <div className="output-file-list">
+                                    {activeSelectedJob.output_files.map((file, i) => (
+                                        <div className={`output-file-item file-cat-${getFileCategory(file)}`} key={i}>
+                                            <span className="output-file-icon">{getFileIcon(file)}</span>
+                                            <span className="output-file-name">{file}</span>
+                                            <span className="output-file-tag">{getFileCategory(file)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {activeSelectedJob.output_file_url && (
+                                    <button
+                                        className="btn btn-p download-results-btn"
+                                        onClick={() => handleDownload(activeSelectedJob)}
+                                    >
+                                        ⬇ Download output.zip
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Logs / result */}
+                        <p className="eyebrow" style={{ marginTop: '16px' }}>execution output</p>
+                        <pre className={`mc ${activeSelectedJob.error ? 'err' : ''}`}>
+                            {activeSelectedJob.status === 'running' || (activeSelectedJob.isParent && activeSelectedJob.status !== 'completed' && activeSelectedJob.status !== 'failed')
+                                ? (liveLogs[activeSelectedJob.id] || 'Connecting to remote worker(s)...\nWaiting for execution logs...\n')
+                                : (activeSelectedJob.result || activeSelectedJob.error || 'No output yet.')}
                         </pre>
                     </div>
                 </div>

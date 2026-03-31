@@ -192,8 +192,23 @@ app.post('/upload-output', outputUpload.single('file'), (req, res) => {
         if (!taskId) return res.status(400).json({ error: 'task_id is required' });
         if (!req.file) return res.status(400).json({ error: 'output zip file is required' });
 
-        const job = jobs.get(taskId);
-        if (!job) return res.status(404).json({ error: 'Task not found' });
+        // If the server restarted and lost the in-memory job, create a stub
+        // so the output is still stored and downloadable
+        let job = jobs.get(taskId);
+        if (!job) {
+            console.warn(`⚠️ upload-output: job ${taskId} not in memory, creating stub`);
+            job = {
+                id: taskId,
+                status: 'completed',
+                description: 'Recovered output (server restarted)',
+                submittedAt: Date.now(),
+                completedAt: Date.now(),
+                files: [],
+                result: null,
+                error: null
+            };
+            jobs.set(taskId, job);
+        }
 
         const outputPath = req.file.path;
         const outputUrl = `${getServerUrl()}/outputs/${path.basename(outputPath)}`;

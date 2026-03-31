@@ -41,9 +41,12 @@ function getCapabilities() {
     } catch {}
 
     try {
-        execSync('docker --version', { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+        // Must check daemon reachability, not just CLI presence
+        execSync('docker info', { encoding: 'utf-8', timeout: 8000, stdio: ['pipe', 'pipe', 'pipe'] });
         caps.dockerAvailable = true;
-    } catch {}
+    } catch {
+        caps.dockerAvailable = false;
+    }
 
     return caps;
 }
@@ -510,16 +513,66 @@ async function handleJob(job) {
                 durationMs: endTime - startTime
             };
 
-            console.log("🔥🔥🔥 USAGE CALCULATED:", usage);
+            console.log(`📊 Usage: ${JSON.stringify(usage)}`);
             console.log(`✅ Job done (using: ${command})`);
             
-            lastResourceUsage = usage; // Save for next offer card
+            lastResourceUsage = usage;
 
+            // ==================== OUTPUT COLLECTION PIPELINE ====================
+            // 1. Write logs.txt into the output directory
+            const logsPath = path.join(outputDir, 'logs.txt');
+            const executionLog = [
+                `jobId: ${jobId}`,
+                `runner: ${command}`,
+                `duration: ${usage.durationMs}ms`,
+                '',
+                '=== STDOUT ===',
+                stdout,
+                '',
+                '=== STDERR ===',
+                stderr
+            ].join('\n');
+            fs.writeFileSync(logsPath, executionLog, 'utf8');
+
+            // 2. List all output files
+            const outputFiles = listFilesRecursive(outputDir);
+            console.log(`📁 Output files (${outputFiles.length}):`, outputFiles);
+
+            // 3. Validate: check for model files
+            const modelExts = new Set(['.pt', '.pth', '.pkl', '.h5', '.joblib', '.onnx', '.keras', '.pb']);
+            const modelFiles = outputFiles.filter(f => modelExts.has(path.extname(f).toLowerCase()));
+            const outputWarning = modelFiles.length === 0 ? 'No model file generated' : null;
+            if (outputWarning) console.log(`⚠️ ${outputWarning}`);
+
+            // 4. Zip the output directory
+            let outputFileUrl = null;
+            if (outputFiles.length > 0) {
+                const zipPath = path.join(jobsPath, `${jobId}-output.zip`);
+                try {
+                    await createZipFromDirectory(outputDir, zipPath);
+                    console.log(`📦 Output zipped: ${zipPath}`);
+
+                    // 5. Upload zip to server
+                    const uploadRes = await uploadOutputZip(SERVER, jobId, zipPath);
+                    outputFileUrl = uploadRes.output_file_url;
+                    console.log(`☁️ Output uploaded: ${outputFileUrl}`);
+                } catch (uploadErr) {
+                    console.warn(`⚠️ Output upload failed (non-fatal): ${uploadErr.message}`);
+                } finally {
+                    // 6. Cleanup local zip
+                    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+                }
+            }
+
+            // 7. Send completion update with all output metadata
             await axios.post(`${SERVER}/job-update`, {
                 jobId,
                 status: 'completed',
                 result: stdout,
-                usage,   // ✅ IMPORTANT
+                output_file_url: outputFileUrl,
+                output_warning: outputWarning,
+                output_files: outputFiles,
+                usage,
                 workerUrl
             });
 
